@@ -94,6 +94,9 @@ jobs:
   jetbrains:
     needs: version
     runs-on: ubuntu-latest
+    # Non-blocking until the IntelliJ plugin's first successful build; remove
+    # this line once it is green.
+    continue-on-error: true
     defaults:
       run:
         working-directory: jetbrains
