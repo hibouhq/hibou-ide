@@ -1,0 +1,251 @@
+{
+  "name": "hibou",
+  "displayName": "hibou",
+  "description": "hibou security findings in your editor: diagnostics on the lines they were found, native suppressions, triage and gate status.",
+  "version": "0.1.0",
+  "publisher": "hibouhq",
+  "license": "AGPL-3.0-only",
+  "pricing": "Free",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hibouhq/hibou-ide",
+    "directory": "vscode"
+  },
+  "homepage": "https://hibouhq.com",
+  "bugs": {
+    "url": "https://github.com/hibouhq/hibou-ide/issues"
+  },
+  "engines": {
+    "vscode": "^1.91.0"
+  },
+  "categories": [
+    "Linters",
+    "Other"
+  ],
+  "keywords": [
+    "security",
+    "sast",
+    "sca",
+    "vulnerabilities",
+    "devsecops"
+  ],
+  "icon": "media/icon.png",
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "workspaceContains:.git",
+    "workspaceContains:.hibou.yaml",
+    "onStartupFinished"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "hibou runs git in the workspace to map findings onto your code, and a repository's git configuration can run commands. Trust the folder to enable hibou."
+    },
+    "virtualWorkspaces": false
+  },
+  "contributes": {
+    "configuration": {
+      "title": "hibou",
+      "properties": {
+        "hibou.server": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "URL of your hibou server, e.g. `https://hibou.example.com`. Empty uses `HIBOU_SERVER` or the server from `hibou login`. User or remote-machine setting only: the extension runs the binary this server serves.",
+          "scope": "machine"
+        },
+        "hibou.path": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Path to a `hibou` binary to run as the language server. Empty downloads the binary matching your server's version (checksum-verified).",
+          "scope": "machine"
+        },
+        "hibou.org": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Override git-remote detection: hibou org as `provider/slug`, e.g. `github/acme`.",
+          "scope": "resource"
+        },
+        "hibou.repo": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Override git-remote detection: hibou repository slug.",
+          "scope": "resource"
+        },
+        "hibou.pollSeconds": {
+          "type": "number",
+          "default": 120,
+          "minimum": 30,
+          "description": "How often to check hibou for a newer scan and gate verdict."
+        },
+        "hibou.showSuppressed": {
+          "type": "boolean",
+          "default": false,
+          "description": "Also show suppressed and accepted findings, as faded hints."
+        },
+        "hibou.coverage.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show line coverage from the last hibou scan in the gutter. The hibou server reads the file from your forge to answer."
+        },
+        "hibou.secretCheck.enabled": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Allow **hibou: Check Staged Changes for Secrets**. It sends your staged diff (`git diff --cached`) to the hibou server, which scans it and stores nothing. User or remote-machine setting only.",
+          "scope": "machine"
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "hibou.signIn",
+        "title": "Sign In",
+        "category": "hibou"
+      },
+      {
+        "command": "hibou.signOut",
+        "title": "Sign Out",
+        "category": "hibou"
+      },
+      {
+        "command": "hibou.setServer",
+        "title": "Set Server URL",
+        "category": "hibou"
+      },
+      {
+        "command": "hibou.refresh",
+        "title": "Refresh Findings",
+        "category": "hibou",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "hibou.openRepo",
+        "title": "Open Repository in hibou",
+        "category": "hibou",
+        "icon": "$(link-external)"
+      },
+      {
+        "command": "hibou.toggleCoverage",
+        "title": "Toggle Coverage Gutter",
+        "category": "hibou"
+      },
+      {
+        "command": "hibou.showMenu",
+        "title": "Show Status",
+        "category": "hibou"
+      },
+      {
+        "command": "hibou.checkStagedSecrets",
+        "title": "Check Staged Changes for Secrets",
+        "category": "hibou",
+        "icon": "$(key)"
+      },
+      {
+        "command": "hibou.restart",
+        "title": "Restart Language Server",
+        "category": "hibou"
+      },
+      {
+        "command": "hibou.suppress",
+        "title": "Suppress Finding with Native Directive",
+        "category": "hibou",
+        "enablement": "false"
+      },
+      {
+        "command": "hibou.triage",
+        "title": "Triage Finding",
+        "category": "hibou",
+        "enablement": "false"
+      },
+      {
+        "command": "hibou.openFindingItem",
+        "title": "Open Finding",
+        "category": "hibou",
+        "enablement": "false"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "hibou.suppress",
+          "when": "false"
+        },
+        {
+          "command": "hibou.triage",
+          "when": "false"
+        },
+        {
+          "command": "hibou.openFindingItem",
+          "when": "false"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "hibou.refresh",
+          "when": "view == hibou.findings",
+          "group": "navigation"
+        },
+        {
+          "command": "hibou.openRepo",
+          "when": "view == hibou.findings",
+          "group": "navigation"
+        }
+      ],
+      "scm/title": [
+        {
+          "command": "hibou.checkStagedSecrets",
+          "when": "scmProvider == git",
+          "group": "navigation"
+        }
+      ]
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "hibou",
+          "title": "hibou",
+          "icon": "media/owl.svg"
+        }
+      ]
+    },
+    "views": {
+      "hibou": [
+        {
+          "id": "hibou.findings",
+          "name": "Findings"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "hibou.findings",
+        "contents": "Connect to your hibou server to see security findings in your code.\n[Set Server URL](command:hibou.setServer)\n[Sign In](command:hibou.signIn)",
+        "when": "hibou.state == unconfigured || hibou.state == signedOut"
+      },
+      {
+        "view": "hibou.findings",
+        "contents": "No open findings for this commit.",
+        "when": "hibou.state == ready"
+      }
+    ]
+  },
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "tsc -p tsconfig.test.json && node --test out-test/test/",
+    "package": "node -e \"require('fs').copyFileSync('../LICENSE', 'LICENSE')\" && npm run build -- --production && vsce package --no-dependencies",
+    "vscode:prepublish": "node esbuild.mjs --production"
+  },
+  "dependencies": {
+    "vscode-languageclient": "10.1.2"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "@types/vscode": "1.91.0",
+    "@vscode/vsce": "4.0.0",
+    "esbuild": "0.28.2",
+    "ovsx": "1.2.0",
+    "typescript": "5.9.3"
+  }
+}

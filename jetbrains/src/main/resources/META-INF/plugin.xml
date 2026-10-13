@@ -1,0 +1,57 @@
+<idea-plugin>
+    <id>com.hibouhq.hibou</id>
+    <name>hibou</name>
+    <vendor url="https://hibouhq.com">hibou</vendor>
+    <description><![CDATA[
+    Shows <a href="https://hibouhq.com">hibou</a> security findings in the files they were found in,
+    mapped onto your working copy with git. Hover for CWE, CVSS, EPSS and KEV; suppress a finding with the
+    scanner's own directive; accept, mark false positive or dispute it; see the pull request's gate verdict.
+    <br/><br/>
+    No source code is sent to the hibou server. Sign in with your browser (device login) or a read-only API key.
+    <br/><br/>
+    Free and open source under the GNU AGPL-3.0:
+    <a href="https://github.com/hibouhq/hibou-ide">source code</a> ·
+    <a href="https://github.com/hibouhq/hibou-ide/issues">issues</a>
+    ]]></description>
+
+    <depends>com.intellij.modules.platform</depends>
+    <depends>com.redhat.devtools.lsp4ij</depends>
+    <depends optional="true" config-file="hibou-json.xml">com.intellij.modules.json</depends>
+
+    <extensions defaultExtensionNs="com.redhat.devtools.lsp4ij">
+        <server id="hibou" name="hibou" factoryClass="com.hibouhq.hibou.ide.HibouServerFactory">
+            <description><![CDATA[hibou security findings (<code>hibou lsp</code>).]]></description>
+        </server>
+        <!-- Findings can be in any source or config file the scanners read. -->
+        <fileNamePatternMapping serverId="hibou" patterns="*.go;*.java;*.kt;*.kts;*.scala;*.groovy;*.gradle;*.js;*.jsx;*.mjs;*.cjs;*.ts;*.tsx;*.vue;*.svelte;*.py;*.rb;*.php;*.cs;*.c;*.h;*.cc;*.cpp;*.hpp;*.rs;*.swift;*.dart;*.sh;*.bash;*.yaml;*.yml;*.json;*.toml;*.tf;*.hcl;*.xml;*.properties;*.sql;*.env;Dockerfile;*.dockerfile;go.mod;go.sum;package.json;pom.xml;Gemfile;Cargo.toml;requirements.txt;pyproject.toml;composer.json"/>
+    </extensions>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <projectConfigurable parentId="tools" instance="com.hibouhq.hibou.ide.HibouConfigurable" id="com.hibouhq.hibou.settings" displayName="hibou"/>
+        <statusBarWidgetFactory id="hibou.status" implementation="com.hibouhq.hibou.ide.HibouStatusWidgetFactory"/>
+        <toolWindow id="hibou" anchor="bottom" icon="AllIcons.Nodes.Plugin" factoryClass="com.hibouhq.hibou.ide.HibouToolWindowFactory"/>
+        <notificationGroup id="hibou" displayType="BALLOON"/>
+    </extensions>
+
+    <projectListeners>
+        <listener class="com.hibouhq.hibou.ide.HibouCoverageEditorListener" topic="com.intellij.openapi.fileEditor.FileEditorManagerListener"/>
+    </projectListeners>
+
+    <actions>
+        <group id="hibou.Menu" text="hibou" popup="true">
+            <action id="hibou.SignIn" class="com.hibouhq.hibou.ide.SignInAction" text="Sign In…"/>
+            <action id="hibou.SignOut" class="com.hibouhq.hibou.ide.SignOutAction" text="Sign Out"/>
+            <action id="hibou.SetServer" class="com.hibouhq.hibou.ide.SetServerAction" text="Set Server URL…"/>
+            <separator/>
+            <action id="hibou.Refresh" class="com.hibouhq.hibou.ide.RefreshAction" text="Refresh Findings"/>
+            <action id="hibou.OpenRepo" class="com.hibouhq.hibou.ide.OpenRepoAction" text="Open Repository in hibou"/>
+            <action id="hibou.ToggleCoverage" class="com.hibouhq.hibou.ide.ToggleCoverageAction" text="Toggle Coverage Gutter"/>
+            <action id="hibou.CheckStagedSecrets" class="com.hibouhq.hibou.ide.CheckStagedSecretsAction" text="Check Staged Changes for Secrets…"/>
+            <action id="hibou.Restart" class="com.hibouhq.hibou.ide.RestartAction" text="Restart Language Server"/>
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
+        </group>
+        <!-- Client-side LSP commands: LSP4IJ runs the action whose ID is the command name. -->
+        <action id="hibou.suppress" class="com.hibouhq.hibou.ide.SuppressCommandAction" text="Suppress hibou Finding"/>
+        <action id="hibou.triage" class="com.hibouhq.hibou.ide.TriageCommandAction" text="Triage hibou Finding"/>
+    </actions>
+</idea-plugin>

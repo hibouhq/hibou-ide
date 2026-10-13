@@ -1,0 +1,8 @@
+**
+!dist/extension.js
+!dist/extension.js.LEGAL.txt
+!media/**
+!package.json
+!README.md
+!CHANGELOG.md
+!LICENSE

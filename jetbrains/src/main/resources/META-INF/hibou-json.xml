@@ -1,0 +1,5 @@
+<idea-plugin>
+    <extensions defaultExtensionNs="JavaScript.JsonSchema">
+        <ProviderFactory implementation="com.hibouhq.hibou.ide.HibouSchemaProviderFactory"/>
+    </extensions>
+</idea-plugin>
