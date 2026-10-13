@@ -233,7 +233,7 @@
     "build": "node esbuild.mjs",
     "watch": "node esbuild.mjs --watch",
     "typecheck": "tsc --noEmit",
-    "test": "tsc -p tsconfig.test.json && node --test out-test/test/",
+    "test": "tsc -p tsconfig.test.json && node --test \"out-test/test/**/*.test.js\"",
     "package": "node -e \"require('fs').copyFileSync('../LICENSE', 'LICENSE')\" && npm run build -- --production && vsce package --no-dependencies",
     "vscode:prepublish": "node esbuild.mjs --production"
   },

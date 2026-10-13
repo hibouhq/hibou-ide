@@ -23,12 +23,12 @@ import java.util.concurrent.CompletableFuture
 
 const val SERVER_ID = "hibou"
 
-/** Highest hibou/* protocol version this plugin understands. `hibou lsp`
+/** Highest hibou/… protocol version this plugin understands. `hibou lsp`
  * ships with each hibou release while the plugin updates from the
  * Marketplace, so it must cope with older and newer servers (PROTOCOL.md). */
 const val SUPPORTED_PROTOCOL = 1
 
-/** The hibou/* requests of `hibou lsp` (internal/lsp/server.go). */
+/** The hibou/… requests of `hibou lsp` (internal/lsp/server.go). */
 interface HibouServerApi : LanguageServer {
     @JsonRequest("hibou/status") fun status(): CompletableFuture<JsonArray>
     @JsonRequest("hibou/findings") fun findings(params: JsonObject): CompletableFuture<JsonArray>
@@ -103,7 +103,7 @@ fun interface HibouStatusListener {
 }
 
 /** The project's view of the language server: latest statuses and access to
- * the hibou/* requests. */
+ * the hibou/… requests. */
 @Service(Service.Level.PROJECT)
 class HibouProjectService(private val project: Project) {
     @Volatile
