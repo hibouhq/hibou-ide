@@ -24,9 +24,14 @@ node scripts/compat.mjs /path/to/hibou       # handshake with a hibou binary
 ## Releasing
 
 Push a tag `vX.Y.Z`. CI builds both extensions, checks compatibility with the
-latest hibou release, and publishes to each store whose secrets are set
-(`VSCE_PAT`, `OVSX_PAT`, `JETBRAINS_*`, in the `marketplace` environment).
-Versions `0.x` go out as VS Code pre-releases.
+latest hibou release, and publishes to Open VSX and the JetBrains Marketplace
+when their secrets are set (`OVSX_PAT`, `JETBRAINS_*`, in the `marketplace`
+environment). Versions `0.x` are VS Code pre-releases.
+
+The Visual Studio Marketplace is manual: download the `hibou-vscode` artifact
+from the tag's CI run and upload it on
+https://marketplace.visualstudio.com/manage/publishers/hibouhq (New extension
+the first time, then `…` → Update).
 
 ## License
 

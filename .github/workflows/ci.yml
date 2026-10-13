@@ -7,9 +7,14 @@ name: CI
 #
 # Releases: push a tag `vX.Y.Z` (e.g. v0.1.0). The version comes from the tag;
 # the stores only accept plain X.Y.Z. While the major version is 0, VS Code
-# builds go out as pre-releases. Each store is skipped until its secrets exist;
-# add required reviewers to the `marketplace` environment to approve every
-# publish by hand.
+# builds are pre-releases. CI publishes to Open VSX and the JetBrains
+# Marketplace when their secrets exist; add required reviewers to the
+# `marketplace` environment to approve every publish by hand.
+#
+# The Visual Studio Marketplace is published by hand: download the
+# `hibou-vscode` artifact and upload it on marketplace.visualstudio.com/manage.
+# (CI publishing there needs an Azure DevOps token, which now requires an
+# Azure subscription, and global tokens are retired on 2026-12-01.)
 
 on:
   push:
@@ -72,9 +77,13 @@ jobs:
         env:
           VERSION: ${{ needs.version.outputs.version }}
         run: npm version "$VERSION" --no-git-tag-version --allow-same-version
+      # A pre-release flag baked into the VSIX lets the artifact be uploaded
+      # by hand on the Marketplace (no Azure DevOps token needed).
       - name: Package VSIX
+        env:
+          PRERELEASE: ${{ needs.version.outputs.prerelease == 'true' && '--pre-release' || '' }}
         run: |
-          npm run package
+          npm run package -- $PRERELEASE
           mv hibou-*.vsix hibou-vscode.vsix
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -143,8 +152,11 @@ jobs:
       run:
         working-directory: vscode
     env:
-      VSCE_PAT: ${{ secrets.VSCE_PAT }}
       OVSX_PAT: ${{ secrets.OVSX_PAT }}
+      # Visual Studio Marketplace publishing is disabled (manual upload, see the
+      # header). To re-enable: uncomment this line and the step below, and add
+      # the VSCE_PAT secret to the `marketplace` environment.
+      # VSCE_PAT: ${{ secrets.VSCE_PAT }}
       PRERELEASE: ${{ needs.version.outputs.prerelease == 'true' && '--pre-release' || '' }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
@@ -158,17 +170,19 @@ jobs:
         with:
           name: hibou-vscode
           path: vscode
-      - name: Visual Studio Marketplace
-        if: env.VSCE_PAT != ''
-        run: npx vsce publish $PRERELEASE --packagePath hibou-vscode.vsix
+      # - name: Visual Studio Marketplace
+      #   if: env.VSCE_PAT != ''
+      #   run: npx vsce publish $PRERELEASE --packagePath hibou-vscode.vsix
       - name: Open VSX
         if: env.OVSX_PAT != ''
         run: npx ovsx publish hibou-vscode.vsix $PRERELEASE
-      - name: Report skipped stores
-        if: env.VSCE_PAT == '' || env.OVSX_PAT == ''
+      - name: Report skipped store
+        if: env.OVSX_PAT == ''
         run: |
-          [ -n "$VSCE_PAT" ] || echo "::warning::VSCE_PAT is not set: Visual Studio Marketplace skipped"
-          [ -n "$OVSX_PAT" ] || echo "::warning::OVSX_PAT is not set: Open VSX skipped"
+          echo "::warning::OVSX_PAT is not set: Open VSX skipped"
+      - name: Visual Studio Marketplace (manual)
+        run: |
+          echo "::notice::Upload the hibou-vscode artifact by hand on https://marketplace.visualstudio.com/manage/publishers/hibouhq"
 
   publish-jetbrains:
     needs: [version, jetbrains, compat]
