@@ -492,7 +492,8 @@
     if (!item || !selectable(item)) return;
     const text = input.value;
     const tail = text.slice(suggest.end);
-    const glue = item.kind === "key" ? "" : tail.startsWith(" ") ? "" : " ";
+    // A field name (or its negation, "-cwe:") waits for its value: no space.
+    const glue = item.kind === "key" || item.kind === "exclude" ? "" : tail.startsWith(" ") ? "" : " ";
     const next = text.slice(0, suggest.start) + item.insert + glue + tail;
     const cursor = suggest.start + item.insert.length + glue.length;
     input.value = next;
