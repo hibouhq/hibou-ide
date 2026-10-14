@@ -1,4 +1,11 @@
+import { cpSync, mkdirSync } from "node:fs";
 import * as esbuild from "esbuild";
+
+// The panel webview uses VS Code's own icon font.
+mkdirSync("dist/codicons", { recursive: true });
+for (const file of ["codicon.css", "codicon.ttf"]) {
+  cpSync(`node_modules/@vscode/codicons/dist/${file}`, `dist/codicons/${file}`);
+}
 
 const production = process.argv.includes("--production");
 const watch = process.argv.includes("--watch");

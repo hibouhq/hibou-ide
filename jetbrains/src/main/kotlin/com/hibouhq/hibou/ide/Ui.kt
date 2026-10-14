@@ -149,10 +149,10 @@ class HibouToolWindowFactory : ToolWindowFactory, DumbAware {
         fun reload() {
             HibouProjectService.get(project).server()
                 .thenCompose { it?.findings(JsonObject()) }
-                .thenAccept { arr ->
+                .thenAccept { res ->
                     ApplicationManager.getApplication().invokeLater {
                         model.clear()
-                        arr?.forEach { model.addElement(it.asJsonObject) }
+                        res?.getAsJsonArray("findings")?.forEach { model.addElement(it.asJsonObject) }
                     }
                 }
         }

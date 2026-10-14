@@ -1,6 +1,7 @@
 **
 !dist/extension.js
 !dist/extension.js.LEGAL.txt
+!dist/codicons/**
 !media/**
 !package.json
 !README.md

@@ -71,7 +71,8 @@ The client spawns `hibou lsp` with:
 | Request | Params | Result |
 |---|---|---|
 | `hibou/status` | — | `Status[]`, one per git work tree |
-| `hibou/findings` | `{uri?}` | `PanelFinding[]` for one document or all |
+| `hibou/findings` | `{uri?, query?}`; `query` is the web UI's filter language, evaluated by the server | `{findings: PanelFinding[], error?}`; positions mapped onto the current code (open buffer or file on disk); `error` explains an invalid query |
+| `hibou/presets` | — | `{presets: [{id, name, query}], error?}`: the user's findings search presets (read-only; servers before ADR-042 answer `error`) |
 | `hibou/refresh` | — | `Status[]` after re-querying hibou |
 | `hibou/login/start` | — | `{userCode, verificationUri, verificationUriComplete, expiresIn}`; error `-32901` = server predates device login |
 | `hibou/login/wait` | — | `{token, tokenName?, user?, expiresAt?}`; the client stores `token` |

@@ -6,6 +6,7 @@ import * as vscode from "vscode";
 import { LanguageClient, LanguageClientOptions, ResponseError, ServerOptions, State, WorkspaceEdit } from "vscode-languageclient/node";
 import { resolveBinary } from "./binary";
 import { Status, statusBar, statusForPath } from "./format";
+import { FindingsPanel } from "./panel";
 import { isInsecureRemote, normalizeServer } from "./platform";
 
 /** JSON-RPC error the language server returns when the hibou server predates
@@ -16,24 +17,6 @@ const loginUnsupported = -32901;
  * ships with each hibou release while the extension updates from the stores,
  * so it must cope with older and newer servers (PROTOCOL.md). */
 export const supportedProtocol = 1;
-
-interface PanelFinding {
-  fingerprint: string;
-  title: string;
-  severity: string;
-  status: string;
-  accepted: boolean;
-  type: string;
-  rule?: string;
-  scanner?: string;
-  component?: string;
-  path?: string;
-  uri?: string;
-  range: { start: { line: number; character: number }; end: { line: number; character: number } };
-  edited?: boolean;
-  kev?: boolean;
-  webUrl: string;
-}
 
 let ext: Extension | undefined;
 
@@ -52,7 +35,7 @@ class Extension {
   private statuses: Status[] = [];
   private readonly log: vscode.LogOutputChannel;
   private readonly statusItem: vscode.StatusBarItem;
-  private readonly tree: FindingsTree;
+  private readonly panel: FindingsPanel;
   private readonly coverage: CoverageGutter;
   private schemaRegistered = false;
   /** hibou/* requests the running server advertised at initialize. */
@@ -62,11 +45,11 @@ class Extension {
     this.log = vscode.window.createOutputChannel("hibou", { log: true });
     this.statusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 50);
     this.statusItem.command = "hibou.showMenu";
-    this.tree = new FindingsTree(() => this.client);
+    this.panel = new FindingsPanel(context, () => this.client, () => this.current(), (request) => this.serverRequests.has(request));
     this.coverage = new CoverageGutter(() => this.client);
     const c = context.subscriptions;
-    c.push(this.log, this.statusItem, this.coverage);
-    c.push(vscode.window.registerTreeDataProvider("hibou.findings", this.tree));
+    c.push(this.log, this.statusItem, this.coverage, this.panel);
+    c.push(vscode.window.registerWebviewViewProvider(FindingsPanel.viewType, this.panel, { webviewOptions: { retainContextWhenHidden: true } }));
 
     const cmd = (id: string, fn: (...args: any[]) => unknown) => c.push(vscode.commands.registerCommand(id, fn));
     cmd("hibou.signIn", () => this.signIn());
@@ -80,7 +63,6 @@ class Extension {
     cmd("hibou.checkStagedSecrets", () => this.checkStagedSecrets());
     cmd("hibou.suppress", (arg: { uri: string; fingerprint: string; line: number }) => this.suppress(arg));
     cmd("hibou.triage", (arg: { uri: string; fingerprint: string; action: string }) => this.triage(arg));
-    cmd("hibou.openFindingItem", (f: PanelFinding) => openFinding(f));
 
     c.push(vscode.window.onDidChangeActiveTextEditor(() => this.renderStatus()));
     c.push(
@@ -175,7 +157,7 @@ class Extension {
     client.onNotification("hibou/statusChanged", (st: Status) => {
       this.statuses = [...this.statuses.filter((s) => s.root !== st.root && s.root !== ""), st];
       this.renderStatus();
-      this.tree.refresh();
+      this.panel.refresh();
       this.coverage.refreshAll();
     });
     this.setStatuses(await client.sendRequest<Status[]>("hibou/status"));
@@ -201,7 +183,7 @@ class Extension {
     this.ready = (async () => {
       await this.stop();
       await this.start();
-      this.tree.refresh();
+      this.panel.refresh();
     })();
     return this.ready;
   }
@@ -209,7 +191,7 @@ class Extension {
   private setStatuses(statuses: Status[]): void {
     this.statuses = statuses;
     this.renderStatus();
-    this.tree.refresh();
+    this.panel.refresh();
   }
 
   private current(): Status | undefined {
@@ -217,6 +199,7 @@ class Extension {
   }
 
   private renderStatus(): void {
+    this.panel.post();
     const st = this.current();
     const view = statusBar(st);
     this.statusItem.text = view.text;
@@ -564,86 +547,6 @@ async function cliConfigServer(): Promise<string | undefined> {
     return m?.[1];
   } catch {
     return undefined;
-  }
-}
-
-function severityIcon(f: PanelFinding): vscode.ThemeIcon {
-  if (f.status === "suppressed" || f.accepted) return new vscode.ThemeIcon("pass", new vscode.ThemeColor("disabledForeground"));
-  switch (f.severity) {
-    case "critical":
-    case "high":
-      return new vscode.ThemeIcon("error", new vscode.ThemeColor("problemsErrorIcon.foreground"));
-    case "medium":
-      return new vscode.ThemeIcon("warning", new vscode.ThemeColor("problemsWarningIcon.foreground"));
-    default:
-      return new vscode.ThemeIcon("info", new vscode.ThemeColor("problemsInfoIcon.foreground"));
-  }
-}
-
-async function openFinding(f: PanelFinding): Promise<void> {
-  if (!f.uri) {
-    await vscode.env.openExternal(vscode.Uri.parse(f.webUrl));
-    return;
-  }
-  const start = new vscode.Position(f.range.start.line, 0);
-  await vscode.window.showTextDocument(vscode.Uri.parse(f.uri), { selection: new vscode.Range(start, start) });
-}
-
-type Node = { kind: "file"; label: string; findings: PanelFinding[] } | { kind: "finding"; finding: PanelFinding };
-
-/** The Findings view: the repository's findings grouped by file. */
-class FindingsTree implements vscode.TreeDataProvider<Node> {
-  private readonly changed = new vscode.EventEmitter<void>();
-  readonly onDidChangeTreeData = this.changed.event;
-  private timer: NodeJS.Timeout | undefined;
-
-  constructor(private readonly client: () => LanguageClient | undefined) {
-    vscode.languages.onDidChangeDiagnostics(() => this.refresh());
-  }
-
-  refresh(): void {
-    clearTimeout(this.timer);
-    this.timer = setTimeout(() => this.changed.fire(), 750);
-  }
-
-  getTreeItem(node: Node): vscode.TreeItem {
-    if (node.kind === "file") {
-      const item = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.Expanded);
-      item.description = `${node.findings.length}`;
-      item.iconPath = vscode.ThemeIcon.File;
-      if (node.findings[0]?.uri) item.resourceUri = vscode.Uri.parse(node.findings[0].uri);
-      return item;
-    }
-    const f = node.finding;
-    const item = new vscode.TreeItem(f.title || f.rule || "finding", vscode.TreeItemCollapsibleState.None);
-    item.description = [f.component, f.rule, f.uri ? `line ${f.range.start.line + 1}` : undefined, f.edited ? "changed since scan" : undefined].filter(Boolean).join(" · ");
-    item.tooltip = new vscode.MarkdownString(
-      [`**${f.severity.toUpperCase()}** ${f.title}`, f.scanner && `Scanner: ${f.scanner}`, f.kev && "Known exploited (KEV)", f.status === "suppressed" && "Suppressed in source", f.accepted && "Accepted"]
-        .filter(Boolean)
-        .join("\n\n"),
-    );
-    item.iconPath = severityIcon(f);
-    item.command = { command: "hibou.openFindingItem", title: "Open", arguments: [f] };
-    return item;
-  }
-
-  async getChildren(node?: Node): Promise<Node[]> {
-    if (node?.kind === "file") return node.findings.map((finding) => ({ kind: "finding", finding }));
-    if (node) return [];
-    const client = this.client();
-    if (!client || client.state !== State.Running) return [];
-    let findings: PanelFinding[];
-    try {
-      findings = await client.sendRequest<PanelFinding[]>("hibou/findings", {});
-    } catch {
-      return [];
-    }
-    const groups = new Map<string, PanelFinding[]>();
-    for (const f of findings) {
-      const key = f.path || (f.type === "dependency" ? "Dependencies" : "Other");
-      groups.set(key, [...(groups.get(key) ?? []), f]);
-    }
-    return [...groups.entries()].map(([label, list]) => ({ kind: "file", label, findings: list }));
   }
 }
 

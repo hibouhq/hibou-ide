@@ -31,7 +31,7 @@ const val SUPPORTED_PROTOCOL = 1
 /** The hibou/… requests of `hibou lsp` (internal/lsp/server.go). */
 interface HibouServerApi : LanguageServer {
     @JsonRequest("hibou/status") fun status(): CompletableFuture<JsonArray>
-    @JsonRequest("hibou/findings") fun findings(params: JsonObject): CompletableFuture<JsonArray>
+    @JsonRequest("hibou/findings") fun findings(params: JsonObject): CompletableFuture<JsonObject>
     @JsonRequest("hibou/refresh") fun refresh(): CompletableFuture<JsonArray>
     @JsonRequest("hibou/login/start") fun loginStart(): CompletableFuture<JsonObject>
     @JsonRequest("hibou/login/wait") fun loginWait(): CompletableFuture<JsonObject>

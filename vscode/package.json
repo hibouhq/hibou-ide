@@ -154,11 +154,6 @@
         "command": "hibou.triage",
         "title": "Triage Finding",
         "category": "hibou"
-      },
-      {
-        "command": "hibou.openFindingItem",
-        "title": "Open Finding",
-        "category": "hibou"
       }
     ],
     "menus": {
@@ -169,10 +164,6 @@
         },
         {
           "command": "hibou.triage",
-          "when": "false"
-        },
-        {
-          "command": "hibou.openFindingItem",
           "when": "false"
         }
       ],
@@ -208,23 +199,12 @@
     "views": {
       "hibou": [
         {
+          "type": "webview",
           "id": "hibou.findings",
           "name": "Findings"
         }
       ]
-    },
-    "viewsWelcome": [
-      {
-        "view": "hibou.findings",
-        "contents": "Connect to your hibou server to see security findings in your code.\n[Set Server URL](command:hibou.setServer)\n[Sign In](command:hibou.signIn)",
-        "when": "hibou.state == unconfigured || hibou.state == signedOut"
-      },
-      {
-        "view": "hibou.findings",
-        "contents": "No open findings for this commit.",
-        "when": "hibou.state == ready"
-      }
-    ]
+    }
   },
   "scripts": {
     "build": "node esbuild.mjs",
@@ -240,6 +220,7 @@
   "devDependencies": {
     "@types/node": "22.20.5",
     "@types/vscode": "1.91.0",
+    "@vscode/codicons": "0.0.45",
     "@vscode/vsce": "4.0.0",
     "esbuild": "0.28.2",
     "ovsx": "1.2.0",
