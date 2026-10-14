@@ -6,7 +6,29 @@
   const SEVERITIES = ["critical", "high", "medium", "low", "info", "unknown"];
   const PAGE = 200;
 
+  // The web UI's findings filters (site/src/views/repo/VulnerabilitiesTab.vue,
+  // lib/riskFilters.ts, lib/cweFilters.ts): same keys, values and wording.
+  const FIELDS = [
+    { key: "type", label: "Type", options: ["dependency", "sast", "secret", "malware", "dast", "container", "fuzzing", "manual", "generic"] },
+    { key: "severity", label: "Severity", options: ["critical", "high", "medium", "unknown", "low", "info"] },
+    { key: "status", label: "Status", options: ["detected", "resolved", "suppressed"] },
+    { key: "acceptance", label: "Triage", options: ["open", "accepted", "risk_accepted", "false_positive", "disputed"] },
+    { key: "presence", label: "Presence", options: ["reported", "not-rechecked", "unconfirmed"], description: "Whether the latest scan re-confirmed the finding" },
+    { key: "tool", label: "Sources", dynamic: (f) => f.scanner },
+    { key: "file", label: "File", dynamic: (f) => f.path, freeform: true },
+    { key: "exploited", label: "Exploited", options: ["true", "false"], description: "Known-exploited dependency findings (CISA KEV / ENISA EUVD)" },
+    { key: "cvss", label: "CVSS", description: "The CVSS score a finding uses: cvss:>=7, cvss:<4, cvss:none", suggestions: [[">=9", "critical"], [">=7", "high and above"], [">=4", "medium and above"], ["none", "unscored"]] },
+    { key: "epss", label: "EPSS", description: "Probability of exploitation in the next 30 days (FIRST): epss:>=10%", suggestions: [[">=10%", "top exploitation risk"], [">=1%", "elevated"], ["none", "unscored"]] },
+    { key: "epss-percentile", label: "EPSS percentile", description: "Rank among all scored CVEs: epss-percentile:>=95", suggestions: [[">=99", "top 1%"], [">=95", "top 5%"]] },
+    { key: "cwe", label: "CWE", description: "Findings carrying a CWE: cwe:79, cwe:CWE-89, cwe:none", freeform: true },
+    { key: "cwe-tree", label: "CWE + sub-types", description: "A CWE and its sub-types: cwe-tree:74 (Injection)", freeform: true },
+    { key: "cwe-set", label: "CWE list", description: "Named CWE lists: CWE Top 25, OWASP Top 10", freeform: true },
+    { key: "cwe-category", label: "CWE category", description: "MITRE View 1400 categories (Injection, Encryption, …)", freeform: true },
+  ];
+  const CONNECTIVES = [["AND", "both conditions"], ["OR", "either condition"], ["NOT", "exclude what follows"]];
+
   let data = null;
+  let suggest = { items: [], index: 0, start: 0, end: 0 };
   const shown = {}; // group key -> rows shown
   let draftQuery = null; // text typed but not applied yet
 
@@ -78,11 +100,21 @@
 
   function render() {
     if (!data) return;
-    const active = document.activeElement && document.activeElement.id;
+    // Updates arrive while the user types: keep focus, caret and the open
+    // suggestions across the redraw.
+    const focused = document.activeElement;
+    const active = focused && focused.id;
+    const caret = active === "q" ? [focused.selectionStart, focused.selectionEnd] : null;
     app.replaceChildren(overview(), tabs(), toolbar(), body());
     if (active) {
       const again = document.getElementById(active);
-      if (again) again.focus();
+      if (again) {
+        again.focus();
+        if (caret) {
+          again.setSelectionRange(caret[0], caret[1]);
+          renderSuggestions();
+        }
+      }
     }
   }
 
@@ -190,18 +222,46 @@
       id: "q",
       type: "text",
       spellcheck: "false",
+      autocomplete: "off",
+      role: "combobox",
+      "aria-autocomplete": "list",
+      "aria-expanded": suggest.items.length > 0,
       placeholder: "Filter: severity:high AND file:cmd/",
       value,
-      title: "Same filter language as the hibou web UI. Enter to apply.",
-      oninput: (e) => (draftQuery = e.target.value),
+      title: "Same filter language as the hibou web UI. Enter to apply, Tab to complete.",
+      oninput: (e) => {
+        draftQuery = e.target.value;
+        computeSuggestions(e.target);
+        renderSuggestions();
+      },
+      onfocus: (e) => {
+        computeSuggestions(e.target);
+        renderSuggestions();
+      },
+      onblur: () => setTimeout(() => ((suggest.items = []), renderSuggestions()), 120),
       onkeydown: (e) => {
-        if (e.key === "Enter") {
+        const open = suggest.items.length > 0;
+        if (open && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+          e.preventDefault();
+          suggest.index = (suggest.index + (e.key === "ArrowDown" ? 1 : suggest.items.length - 1)) % suggest.items.length;
+          renderSuggestions();
+        } else if (open && (e.key === "Tab" || (e.key === "Enter" && suggest.picked))) {
+          e.preventDefault();
+          accept(e.target, suggest.items[suggest.index]);
+        } else if (e.key === "Enter") {
+          suggest.items = [];
           setView({ query: e.target.value.trim() });
           draftQuery = null;
         } else if (e.key === "Escape") {
-          draftQuery = null;
-          setView({ query: "" });
+          if (open) {
+            suggest.items = [];
+            renderSuggestions();
+          } else {
+            draftQuery = null;
+            setView({ query: "" });
+          }
         }
+        if (e.key === "ArrowDown" || e.key === "ArrowUp") suggest.picked = true;
       },
     });
     const presets = el(
@@ -239,6 +299,7 @@
         { class: "search" },
         icon("filter"),
         input,
+        el("div", { id: "suggest", class: "suggest", role: "listbox" }),
         st.query ? el("button", { class: "icon-btn", title: "Clear filter", onclick: () => ((draftQuery = null), setView({ query: "" })) }, icon("close")) : null,
       ),
       data.error ? el("div", { class: "error" }, icon("error"), " ", data.error) : null,
@@ -251,6 +312,115 @@
         chip("Re-confirmed only", st.hideUnconfirmed, "eye-closed", { hideUnconfirmed: !st.hideUnconfirmed }, "Hide findings the latest scan did not re-confirm"),
       ),
     );
+  }
+
+  // ---- filter completion ----------------------------------------------------
+  function wordAt(text, cursor) {
+    let start = cursor;
+    while (start > 0 && !/[\s()]/.test(text[start - 1])) start--;
+    let end = cursor;
+    while (end < text.length && !/[\s()]/.test(text[end])) end++;
+    return { start, end, word: text.slice(start, cursor) };
+  }
+
+  function valueCounts(field) {
+    const counts = new Map();
+    for (const f of data.findings) {
+      const v = field.dynamic(f);
+      if (v) counts.set(v, (counts.get(v) || 0) + 1);
+      if (field.key === "file" && v && v.includes("/")) {
+        const dir = v.slice(0, v.lastIndexOf("/") + 1);
+        counts.set(dir, (counts.get(dir) || 0) + 1);
+      }
+    }
+    return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  }
+
+  function computeSuggestions(input) {
+    const text = input.value;
+    const cursor = input.selectionStart ?? text.length;
+    const { start, end, word } = wordAt(text, cursor);
+    const items = [];
+    const colon = word.indexOf(":");
+    const negated = word.startsWith("-") ? "-" : "";
+    if (colon > 0) {
+      const key = word.slice(negated.length, colon).toLowerCase();
+      const field = FIELDS.find((f) => f.key === key);
+      const rawValue = word.slice(colon + 1);
+      const comma = rawValue.lastIndexOf(",");
+      const before = word.slice(0, colon + 1) + rawValue.slice(0, comma + 1);
+      const prefix = rawValue.slice(comma + 1).toLowerCase();
+      if (field) {
+        let options = [];
+        if (field.options) options = field.options.map((o) => [o, ""]);
+        if (field.suggestions) options = field.suggestions;
+        if (field.dynamic) options = valueCounts(field).map(([v, n]) => [v, `${n}`]);
+        for (const [value, detail] of options) {
+          if (value.toLowerCase().includes(prefix) && value.toLowerCase() !== prefix) {
+            items.push({ insert: before + quote(value), label: value, detail, kind: "value" });
+          }
+        }
+        if (!items.length && field.description) items.push({ insert: null, label: field.description, detail: "", kind: "hint" });
+      }
+    } else {
+      const prefix = word.slice(negated.length).toLowerCase();
+      for (const field of FIELDS) {
+        if (field.key.startsWith(prefix) || (prefix && field.label.toLowerCase().startsWith(prefix))) {
+          items.push({ insert: `${negated}${field.key}:`, label: `${field.key}:`, detail: field.label, kind: "key" });
+        }
+      }
+      const before = text.slice(0, start).trim();
+      if (before && !/\b(AND|OR|NOT)$/i.test(before) && !before.endsWith("(")) {
+        for (const [c, detail] of CONNECTIVES) if (c.toLowerCase().startsWith(prefix)) items.push({ insert: c, label: c, detail, kind: "op" });
+      }
+      if (!prefix) items.splice(12);
+    }
+    suggest = { items: items.slice(0, 50), index: 0, start, end, picked: false };
+  }
+
+  function quote(value) {
+    return /[\s(),]/.test(value) ? JSON.stringify(value) : value;
+  }
+
+  function accept(input, item) {
+    if (!item || item.insert === null) return;
+    const text = input.value;
+    const tail = text.slice(suggest.end);
+    const glue = item.kind === "key" ? "" : tail.startsWith(" ") ? "" : " ";
+    const next = text.slice(0, suggest.start) + item.insert + glue + tail;
+    const cursor = suggest.start + item.insert.length + glue.length;
+    input.value = next;
+    draftQuery = next;
+    input.setSelectionRange(cursor, cursor);
+    computeSuggestions(input);
+    renderSuggestions();
+  }
+
+  function renderSuggestions() {
+    const box = document.getElementById("suggest");
+    const input = document.getElementById("q");
+    if (!box || !input) return;
+    input.setAttribute("aria-expanded", String(suggest.items.length > 0));
+    box.replaceChildren(
+      ...suggest.items.map((item, i) =>
+        el(
+          "div",
+          {
+            class: `sg sg-${item.kind}${i === suggest.index ? " active" : ""}`,
+            role: "option",
+            "aria-selected": i === suggest.index,
+            onmousedown: (e) => {
+              e.preventDefault();
+              accept(input, item);
+            },
+          },
+          item.kind === "hint" ? icon("info") : icon(item.kind === "key" ? "symbol-field" : item.kind === "op" ? "symbol-operator" : "symbol-value"),
+          el("span", { class: "sg-label", text: item.label }),
+          item.detail ? el("span", { class: "sg-detail", text: item.detail }) : null,
+        ),
+      ),
+    );
+    box.classList.toggle("open", suggest.items.length > 0);
   }
 
   // ---- list -----------------------------------------------------------------
@@ -337,17 +507,17 @@
   function row(f, by) {
     const line = f.range.start.line + 1;
     let meta;
-    if (f.history) meta = `commit ${(f.commit || "").slice(0, 7)}`;
+    if (f.history) meta = (f.commit || "").slice(0, 7);
     else if (by === "package") meta = f.advisoryId || "";
-    else if (by === "file") meta = [f.rule, f.uri ? `L${line}` : ""].filter(Boolean).join(" · ");
-    else meta = [f.path ? `${f.path.split("/").pop()}${f.uri ? ":" + line : ""}` : f.component].filter(Boolean).join(" · ");
-    const tags = [];
-    if (f.kev) tags.push(["kev", "Known exploited vulnerability (CISA KEV)"]);
-    if (f.history) tags.push(["history", `No longer in the code, still in git history (commit ${(f.commit || "").slice(0, 7)}): rotate the secret`]);
-    if (f.status === "suppressed") tags.push(["suppressed", "Suppressed in source"]);
-    if (f.accepted) tags.push(["accepted", "Accepted in hibou"]);
-    if (carried(f)) tags.push(["unconfirmed", "Not re-confirmed by the latest scan"]);
-    if (f.edited) tags.push(["changed", "Code changed since the scan"]);
+    else if (by === "file") meta = f.uri ? `L${line}` : "";
+    else meta = f.path ? `${f.path.split("/").pop()}${f.uri ? ":" + line : ""}` : f.component || "";
+    // State as small icons (tooltip explains), so the title keeps the room.
+    const marks = [];
+    if (f.history) marks.push(["history", "mark-warn", `No longer in the code, still in git history (commit ${(f.commit || "").slice(0, 7)}): rotate the secret`]);
+    if (f.status === "suppressed") marks.push(["eye-closed", "", "Suppressed in source"]);
+    if (f.accepted) marks.push(["pass", "", "Accepted in hibou"]);
+    if (carried(f)) marks.push(["unverified", "", "Not re-confirmed by the latest scan"]);
+    if (f.edited && !f.history) marks.push(["diff-modified", "", "Code changed since the scan; may already be fixed"]);
     const open = () => (f.uri ? send({ type: "open", uri: f.uri, line: f.range.start.line }) : send({ type: "openWeb", url: f.webUrl }));
     return el(
       "div",
@@ -355,13 +525,14 @@
         class: `item${muted(f) ? " muted" : ""}${carried(f) ? " carried" : ""}`,
         tabindex: "0",
         role: "button",
-        title: [f.title, f.scanner && `Scanner: ${f.scanner}`, f.rule && `Rule: ${f.rule}`, f.component && `Package: ${f.component}`, ...tags.map((t) => t[1])].filter(Boolean).join("\n"),
+        title: [f.title, f.scanner && `Scanner: ${f.scanner}`, f.rule && `Rule: ${f.rule}`, f.component && `Package: ${f.component}`, f.path && `${f.path}${f.uri ? ":" + line : ""}`, ...marks.map((m) => m[2])].filter(Boolean).join("\n"),
         onclick: open,
         onkeydown: (e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), open()),
       },
       el("span", { class: `dot sev-${f.severity}`, title: f.severity, role: "img", "aria-label": f.severity }),
       el("span", { class: "title", text: f.title || f.rule || f.advisoryId || "finding" }),
-      tags.map(([t, title]) => el("span", { class: `tag tag-${t}`, title, text: t })),
+      f.kev ? el("span", { class: "tag tag-kev", title: "Known exploited vulnerability (CISA KEV)", text: "KEV" }) : null,
+      marks.length ? el("span", { class: "marks" }, marks.map(([name, cls, title]) => el("span", { class: `codicon codicon-${name} mark ${cls}`, title, "aria-label": title, role: "img" }))) : null,
       el("span", { class: "meta", text: meta }),
       el(
         "button",
