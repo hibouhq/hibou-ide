@@ -71,7 +71,7 @@ The client spawns `hibou lsp` with:
 | Request | Params | Result |
 |---|---|---|
 | `hibou/status` | — | `Status[]`, one per git work tree |
-| `hibou/findings` | `{uri?, query?}`; `query` is the web UI's filter language, evaluated by the server | `{findings: PanelFinding[], error?}`; positions mapped onto the current code (open buffer or file on disk); `error` explains an invalid query |
+| `hibou/findings` | `{uri?, root?, query?}`; `root` limits the list to one work tree (a `Status.root`); `query` is the web UI's filter language, evaluated by the server | `{findings: PanelFinding[], error?}`; positions mapped onto the current code (open buffer or file on disk); `error` explains an invalid query |
 | | | A secret whose flagged lines no longer exist in the code has `history: true` (and `commit`, where it was found) and no `uri`: it is not underlined, but stays listed, since it remains in git history. |
 | `hibou/cweSets` | — | the server's CWE lists and categories, `{version, sets: [{slug, name, kind, member_count}], categories: [...]}` (filter completion for `cwe-set:` / `cwe-category:`) |
 | `hibou/cweSearch` | `{query, roots?}` | CWE catalog entries matching an id or title, `{version, entries: [{id, name, abstraction, …}]}`; `roots` with an empty query lists the pillars |
@@ -86,6 +86,12 @@ The client spawns `hibou lsp` with:
 | `hibou/triage` | `{uri, fingerprint, action, reason?, expiresInDays?}`, action ∈ `accept`, `false_positive`, `reopen`, `dispute`, `undispute` | `{ok, message, webUrl?}`; `webUrl` set when the token cannot triage |
 | `hibou/coverage` | `{uri}` | `{covered[], uncovered[], partial[], commit?, message?}`, 0-based current lines |
 | `hibou/secretCheck` | `{root?}` | `{block, findings[], message}`; sends the staged diff, stores nothing server-side |
+
+## Notifications (client → server)
+
+| Notification | Params |
+|---|---|
+| `hibou/repositories` | `{roots: [uri or path]}`: repositories the client knows (VS Code: the git extension's list, as in Source Control). The server tracks them in addition to its own shallow scan for nested checkouts. |
 
 ## Notifications (server → client)
 

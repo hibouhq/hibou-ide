@@ -43,9 +43,15 @@ interface ViewState {
   thisFile: boolean;
   hideUnconfirmed: boolean;
   collapsed: string[];
+  /** Work tree shown; "" follows the active editor's repository, "*" shows
+   * every repository of the workspace, grouped by repository. */
+  root: string;
 }
 
-const defaultView: ViewState = { tab: "code", groupBy: "file", query: "", thisFile: false, hideUnconfirmed: false, collapsed: [] };
+// Every repository by default, grouped by repository when there are several
+// (nested checkouts); a single repository shows as a plain list.
+const defaultView: ViewState = { tab: "code", groupBy: "file", query: "", thisFile: false, hideUnconfirmed: false, collapsed: [], root: "*" };
+const stateKey = "hibou.panel.v2";
 
 type FromWebview =
   | { type: "ready" }
@@ -74,6 +80,8 @@ export class FindingsPanel implements vscode.WebviewViewProvider, vscode.Disposa
   private presets: Preset[] = [];
   private presetsError = "";
   private loading = false;
+  /** Root the current findings were fetched for. */
+  private loadedRoot = "";
   private timer: NodeJS.Timeout | undefined;
   private readonly subs: vscode.Disposable[] = [];
 
@@ -82,10 +90,14 @@ export class FindingsPanel implements vscode.WebviewViewProvider, vscode.Disposa
     private readonly client: () => LanguageClient | undefined,
     private readonly status: () => Status | undefined,
     private readonly supports: (request: string) => boolean,
+    private readonly statuses: () => Status[],
   ) {
-    this.state = { ...defaultView, ...context.workspaceState.get<Partial<ViewState>>("hibou.panel", {}) };
+    this.state = { ...defaultView, ...context.workspaceState.get<Partial<ViewState>>(stateKey, {}) };
     this.subs.push(
-      vscode.window.onDidChangeActiveTextEditor(() => this.post()),
+      // Switching to a file of another repository switches the panel to it.
+      vscode.window.onDidChangeActiveTextEditor(() =>
+        this.state.root !== "*" && (this.current()?.root ?? "") !== this.loadedRoot ? this.refresh(0) : this.post(),
+      ),
       vscode.languages.onDidChangeDiagnostics(() => this.refresh(1500)),
     );
   }
@@ -106,9 +118,22 @@ export class FindingsPanel implements vscode.WebviewViewProvider, vscode.Disposa
     this.timer = setTimeout(() => void this.load(), delay);
   }
 
+  /** The repository shown: the one chosen in the panel, else the active
+   * editor's. A workspace can hold several (nested checkouts). */
+  private current(): Status | undefined {
+    if (this.state.root && this.state.root !== "*") {
+      const chosen = this.statuses().find((s) => s.root === this.state.root);
+      if (chosen) return chosen;
+    }
+    return this.status();
+  }
+
   /** Re-renders without fetching (status or active editor changed). */
   post(): void {
-    const status = this.status();
+    const status = this.current();
+    const repos = this.statuses()
+      .filter((s) => s.root)
+      .map((s) => ({ root: s.root, label: s.repo ? `${s.repo.org}/${s.repo.repo}` : s.root.split(/[\\/]/).pop() || s.root, state: s.state }));
     void this.view?.webview.postMessage({
       type: "update",
       state: this.state,
@@ -118,6 +143,9 @@ export class FindingsPanel implements vscode.WebviewViewProvider, vscode.Disposa
       error: this.error,
       presets: this.presets,
       presetsError: this.presetsError,
+      repos,
+      followsEditor: !this.state.root,
+      allRepos: this.state.root === "*",
       loading: this.loading,
       activeUri: vscode.window.activeTextEditor?.document.uri.toString() ?? "",
     });
@@ -133,11 +161,14 @@ export class FindingsPanel implements vscode.WebviewViewProvider, vscode.Disposa
     }
     this.loading = true;
     this.post();
+    // "*": every repository (the language server's list is unscoped).
+    const root = this.state.root === "*" ? "" : (this.current()?.root ?? "");
+    this.loadedRoot = this.state.root === "*" ? "*" : root;
     try {
-      const all = await client.sendRequest<{ findings: PanelFinding[] }>("hibou/findings", {});
+      const all = await client.sendRequest<{ findings: PanelFinding[] }>("hibou/findings", { root });
       this.all = all.findings ?? [];
       if (this.state.query) {
-        const res = await client.sendRequest<{ findings: PanelFinding[]; error?: string }>("hibou/findings", { query: this.state.query });
+        const res = await client.sendRequest<{ findings: PanelFinding[]; error?: string }>("hibou/findings", { root, query: this.state.query });
         this.findings = res.findings ?? [];
         this.error = res.error ?? "";
       } else {
@@ -176,9 +207,10 @@ export class FindingsPanel implements vscode.WebviewViewProvider, vscode.Disposa
         if (/^https?:\/\//.test(msg.url)) await vscode.env.openExternal(vscode.Uri.parse(msg.url));
         return;
       case "setView": {
-        const queryChanged = msg.patch.query !== undefined && msg.patch.query !== this.state.query;
+        const queryChanged =
+          (msg.patch.query !== undefined && msg.patch.query !== this.state.query) || (msg.patch.root !== undefined && msg.patch.root !== this.state.root);
         this.state = { ...this.state, ...msg.patch };
-        await this.context.workspaceState.update("hibou.panel", this.state);
+        await this.context.workspaceState.update(stateKey, this.state);
         if (queryChanged) this.refresh(0);
         else this.post();
         return;

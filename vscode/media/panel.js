@@ -65,6 +65,11 @@
   function el(tag, attrs, ...children) {
     const node = document.createElement(tag);
     for (const [k, v] of Object.entries(attrs || {})) {
+      // aria-* states need an explicit "false" (aria-expanded, aria-selected…).
+      if (k.startsWith("aria-") && typeof v === "boolean") {
+        node.setAttribute(k, String(v));
+        continue;
+      }
       if (v === undefined || v === null || v === false) continue;
       if (k === "class") node.className = v;
       else if (k === "style") Object.assign(node.style, v); // CSSOM: allowed by the CSP, unlike style="" attributes
@@ -81,7 +86,7 @@
   const icon = (name, cls) => el("span", { class: `codicon codicon-${name}${cls ? " " + cls : ""}`, "aria-hidden": "true" });
 
   function tabOf(f) {
-    if (f.type === "dependency" || f.type === "container") return "dependencies";
+    if (f.type === "dependency" || f.type === "container" || f.type === "malware") return "dependencies";
     if (f.type === "secret") return "secrets";
     return "code";
   }
@@ -92,8 +97,8 @@
   // the filter bar always shows what is applied (like the web UI's CWE page,
   // which opens the findings list with a query).
   const TAB_TERMS = {
-    code: "-type:dependency,container,secret",
-    dependencies: "type:dependency,container",
+    code: "-type:dependency,container,malware,secret",
+    dependencies: "type:dependency,container,malware",
     secrets: "type:secret",
   };
   const TYPE_TERM = /(^|\s)-?type:\S+/g;
@@ -159,11 +164,13 @@
     const repo = st.repo ? `${st.repo.org}/${st.repo.repo}` : "";
     const snap = st.snapshot;
     let scan = "";
-    if (snap) {
+    if (multiRepo()) {
+      scan = `Findings of ${readyRepos().length} repositories`;
+    } else if (snap) {
       scan = snap.atHead ? "scan of this commit" : `scan of ${snap.commit.slice(0, 7)} on ${snap.ref}`;
       scan += " · " + ago(snap.createdAt);
     }
-    const gate = st.gate
+    const gate = st.gate && !multiRepo()
       ? el(
           "button",
           {
@@ -182,8 +189,8 @@
         "div",
         { class: "repo-line" },
         icon("repo"),
-        el("span", { class: "repo", text: repo }),
-        st.branch ? el("span", { class: "branch" }, icon("git-branch"), st.branch) : null,
+        repoPicker(repo),
+        st.branch && !multiRepo() ? el("span", { class: "branch" }, icon("git-branch"), st.branch) : null,
         el("span", { class: "spacer" }),
         el("button", { class: "icon-btn", title: "Open in hibou", onclick: () => send({ type: "command", command: "hibou.openRepo" }) }, icon("link-external")),
         el("button", { class: "icon-btn", title: "Refresh", onclick: () => send({ type: "refresh" }) }, icon(data.loading ? "loading codicon-modifier-spin" : "refresh")),
@@ -197,6 +204,37 @@
           ? SEVERITIES.filter((s) => c[s]).map((s) => el("span", { class: `seg sev-${s}`, style: { flexGrow: String(c[s]) }, title: `${c[s]} ${s}` }))
           : el("span", { class: "seg seg-empty" }),
       ),
+      malwareCount(all)
+        ? el(
+            "button",
+            {
+              class: "malware-line",
+              title: "Show only malicious packages (adds type:malware to the filter)",
+              onclick: () => {
+                draftQuery = null;
+                setView({ query: withTab(data.state.query, "").concat(" type:malware").trim() });
+              },
+            },
+            biohazard(),
+            ` ${malwareCount(all)} malicious package${malwareCount(all) > 1 ? "s" : ""}`,
+          )
+        : null,
+      kevCount(all)
+        ? el(
+            "button",
+            {
+              class: "kev-line",
+              title: "Show only known-exploited findings (adds exploited:true to the filter)",
+              onclick: () => {
+                draftQuery = null;
+                const q = data.state.query;
+                if (!/(^|\s)exploited:true\b/.test(q)) setView({ query: q ? `${q} exploited:true` : "exploited:true" });
+              },
+            },
+            flame(),
+            ` ${kevCount(all)} known exploited`,
+          )
+        : null,
       el(
         "div",
         { class: "legend" },
@@ -204,6 +242,31 @@
           ? SEVERITIES.filter((s) => c[s]).map((s) => el("span", { class: "legend-item" }, el("span", { class: `dot sev-${s}` }), `${c[s]} ${s}`))
           : el("span", { class: "muted", text: "No open findings in this scan" }),
       ),
+    );
+  }
+
+  const kevCount = (list) => list.filter((f) => f.kev).length;
+  const readyRepos = () => (data.repos || []).filter((r) => r.state === "ready");
+  // Grouping by repository only makes sense when there are several.
+  const multiRepo = () => data.allRepos && readyRepos().length > 1;
+  const malwareCount = (list) => list.filter(isMalware).length;
+
+  // Several repositories in the workspace (nested checkouts): show one at a
+  // time and say which. "Active editor" follows the file being edited.
+  function repoPicker(label) {
+    const repos = readyRepos();
+    if (repos.length < 2) return el("span", { class: "repo", text: label });
+    const FOLLOW = "\u0000follow";
+    return el(
+      "select",
+      {
+        class: "repo-select",
+        title: data.allRepos ? "Every repository of the workspace" : data.followsEditor ? "Following the active editor's repository" : "Repository shown (pinned)",
+        onchange: (e) => setView({ root: e.target.value === FOLLOW ? "" : e.target.value }),
+      },
+      repos.map((r) => el("option", { value: r.root, selected: !data.allRepos && r.root === data.status.root, text: r.label, title: r.root })),
+      el("option", { value: "*", selected: data.allRepos, text: `All repositories (${repos.length})` }),
+      el("option", { value: FOLLOW, text: data.followsEditor ? "✓ Follow active editor" : "Follow active editor" }),
     );
   }
 
@@ -324,7 +387,7 @@
           }
         },
       },
-      el("option", { value: "", text: data.presets.length ? "Presets" : "No presets" }),
+      el("option", { value: "", text: data.presets.length ? "Presets" : data.presetsError ? "Presets: newer server needed" : "No presets" }),
       data.presets.map((p) => el("option", { value: p.query, title: p.query, selected: p.query === st.query, text: p.name })),
     );
     const chip = (label, on, iconName, patch, title) =>
@@ -357,7 +420,39 @@
         group,
         chip("This file", st.thisFile, "file", { thisFile: !st.thisFile }, "Only findings in the active editor's file"),
         chip("Re-confirmed only", st.hideUnconfirmed, "eye-closed", { hideUnconfirmed: !st.hideUnconfirmed }, "Hide findings the latest scan did not re-confirm"),
+        collapseAllButton(),
       ),
+    );
+  }
+
+  // Collapse or expand every group of the current list, as VS Code's views do.
+  function collapseAllButton() {
+    const by = activeTab(data.state.query) === "dependencies" ? "package" : data.state.groupBy;
+    // Every level: repositories and the groups inside them, so expanding a
+    // repository afterwards shows its groups still collapsed.
+    const list = visibleFindings();
+    let keys;
+    if (multiRepo()) {
+      const byRoot = new Map();
+      for (const f of list) byRoot.set(f.root || "", [...(byRoot.get(f.root || "") || []), f]);
+      keys = [...byRoot.entries()].flatMap(([root, items]) => [`repo:${root}`, ...groupFindings(items, by).map((g) => `${root}|${g.by}:${g.key}`)]);
+    } else {
+      keys = groupFindings(list, by).map((g) => `${g.by}:${g.key}`);
+    }
+    const allCollapsed = keys.length > 0 && keys.every((k) => data.state.collapsed.includes(k));
+    return el(
+      "button",
+      {
+        class: "icon-btn",
+        title: allCollapsed ? "Expand all" : "Collapse all",
+        "aria-label": allCollapsed ? "Expand all" : "Collapse all",
+        disabled: !keys.length,
+        onclick: () => {
+          const current = data.state.collapsed;
+          setView({ collapsed: allCollapsed ? current.filter((k) => !keys.includes(k)) : [...new Set([...current, ...keys])] });
+        },
+      },
+      icon(allCollapsed ? "expand-all" : "collapse-all"),
     );
   }
 
@@ -546,8 +641,25 @@
       return el("section", { class: "empty small" }, icon("check", "big ok"), el("div", { class: "muted", text: why }));
     }
     const by = activeTab(st.query) === "dependencies" ? "package" : st.groupBy;
-    const groups = groupFindings(list, by);
-    return el("section", { class: "list" }, groups.map((g) => groupNode(g)));
+    const header = list.some(hasRisk)
+      ? el("div", { class: "list-head" }, el("span", { class: "spacer" }), el("span", { class: "risk" }, el("span", { title: "CVSS base score", text: "CVSS" }), el("span", { title: "Probability of exploitation in the next 30 days (FIRST EPSS)", text: "EPSS" })))
+      : null;
+    if (multiRepo()) {
+      const byRoot = new Map();
+      for (const f of list) byRoot.set(f.root || "", [...(byRoot.get(f.root || "") || []), f]);
+      const label = (root) => ((data.repos || []).find((r) => r.root === root) || {}).label || root.split(/[\\/]/).pop() || "repository";
+      const repoSections = [...byRoot.entries()].sort((a, b) => label(a[0]).localeCompare(label(b[0])));
+      return el("section", { class: "list" }, header, repoSections.map(([root, items]) => repoSection(root, label(root), items, by)));
+    }
+    return el("section", { class: "list" }, header, groupFindings(list, by).map((g) => groupNode(g)));
+  }
+
+  // Maven coordinates are long ("org.apache.logging.log4j:log4j-core"): the
+  // artifact names the package, the group goes to the tooltip.
+  function packageLabel(f) {
+    const name = f.package || f.component || "Unknown package";
+    const artifact = name.includes(":") ? name.slice(name.lastIndexOf(":") + 1) : name;
+    return [artifact, f.version || ""];
   }
 
   function groupFindings(list, by) {
@@ -557,8 +669,7 @@
       switch (by) {
         case "package":
           key = `${f.package || f.component || "?"}@${f.version || ""}`;
-          label = f.package || f.component || "Unknown package";
-          sub = f.version || "";
+          [label, sub] = packageLabel(f);
           iconName = "package";
           break;
         case "severity":
@@ -576,8 +687,7 @@
           if (!f.path && f.package) {
             // A dependency without a manifest location: group by package.
             key = `${f.package}@${f.version || ""}`;
-            label = f.package;
-            sub = f.version || "";
+            [label, sub] = packageLabel(f);
             iconName = "package";
             break;
           }
@@ -590,27 +700,153 @@
       map.get(key).items.push(f);
     }
     const rank = (g) => Math.min(...g.items.map((f) => (muted(f) ? 99 : SEVERITIES.indexOf(f.severity))));
-    return [...map.values()].sort((a, b) => (by === "severity" ? SEVERITIES.indexOf(a.key) - SEVERITIES.indexOf(b.key) : rank(a) - rank(b) || b.items.length - a.items.length || a.label.localeCompare(b.label)));
+    const exploited = (g) => (g.items.some((f) => isMalware(f) && !muted(f)) ? -1 : g.items.some((f) => f.kev && !muted(f)) ? 0 : 1);
+    return [...map.values()].sort((a, b) => (by === "severity" ? SEVERITIES.indexOf(a.key) - SEVERITIES.indexOf(b.key) : exploited(a) - exploited(b) || rank(a) - rank(b) || b.items.length - a.items.length || a.label.localeCompare(b.label)));
   }
 
-  function groupNode(g) {
+  // ---- risk (ADR-038): the web UI's KEV flame, CVSS bands and EPSS -------
+  const SVG = "http://www.w3.org/2000/svg";
+  // lucide "flame" (ISC), the icon the web UI uses for known-exploited.
+  const FLAME = "M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z";
+  const KEV_TITLE = "Listed on a known-exploited catalog (CISA KEV / ENISA EUVD) — exploitation in the wild is documented";
+
+  // lucide "biohazard" (ISC) in the web UI's malware violet, drawn like the
+  // flame but without a badge (site/src/components/finding/MalwareIcon.vue).
+  const BIOHAZARD = [
+    ["circle", { cx: "12", cy: "11.9", r: "2" }],
+    ["path", { d: "M6.7 3.4c-.9 2.5 0 5.2 2.2 6.7C6.5 9 3.7 9.6 2 11.6" }],
+    ["path", { d: "m8.9 10.1 1.4.8" }],
+    ["path", { d: "M17.3 3.4c.9 2.5 0 5.2-2.2 6.7 2.4-1.2 5.2-.6 6.9 1.5" }],
+    ["path", { d: "m15.1 10.1-1.4.8" }],
+    ["path", { d: "M16.7 20.8c-2.6-.4-4.6-2.6-4.7-5.3-.2 2.6-2.1 4.8-4.7 5.2" }],
+    ["path", { d: "M12 13.9v1.6" }],
+    ["path", { d: "M13.5 5.4c-1-.2-2-.2-3 0" }],
+    ["path", { d: "M17 16.4c.7-.7 1.2-1.6 1.5-2.5" }],
+    ["path", { d: "M5.5 13.9c.3.9.8 1.8 1.5 2.5" }],
+  ];
+  const MALWARE_TITLE = "Malicious package — remove it, do not upgrade";
+  const isMalware = (f) => f.type === "malware";
+
+  function biohazard() {
+    const svg = document.createElementNS(SVG, "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("aria-hidden", "true");
+    for (const [tag, attrs] of BIOHAZARD) {
+      const node = document.createElementNS(SVG, tag);
+      for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+      svg.append(node);
+    }
+    return el("span", { class: "malware", role: "img", "aria-label": MALWARE_TITLE, title: MALWARE_TITLE }, svg);
+  }
+
+  function flame() {
+    const svg = document.createElementNS(SVG, "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("aria-hidden", "true");
+    const path = document.createElementNS(SVG, "path");
+    path.setAttribute("d", FLAME);
+    svg.append(path);
+    return el("span", { class: "kev", role: "img", "aria-label": "Known exploited vulnerability", title: KEV_TITLE }, svg);
+  }
+
+  function cvssBand(score) {
+    if (score >= 9) return "critical";
+    if (score >= 7) return "high";
+    if (score >= 4) return "medium";
+    if (score > 0) return "low";
+    return "none";
+  }
+  function formatEPSS(score) {
+    const percent = score * 100;
+    return percent >= 1 ? `${percent.toFixed(1)}%` : `${percent.toPrecision(2)}%`;
+  }
+  function formatPercentile(p) {
+    const v = Math.floor(p * 1000) / 10;
+    const text = Number.isInteger(v) ? v.toFixed(0) : v.toFixed(1);
+    const last = Math.floor(v) % 10;
+    const teen = Math.floor(v) % 100 >= 11 && Math.floor(v) % 100 <= 13;
+    return text + (!Number.isInteger(v) || teen ? "th" : last === 1 ? "st" : last === 2 ? "nd" : last === 3 ? "rd" : "th");
+  }
+  const hasRisk = (f) => f.cvss !== undefined || f.epss !== undefined;
+
+  function riskCells(f) {
+    const cvss =
+      f.cvss !== undefined
+        ? el("span", { class: `cvss band-${cvssBand(f.cvss)}`, title: `CVSS ${f.cvssVersion || ""} ${f.cvss.toFixed(1)}`.replace(/\s+/g, " "), text: f.cvss.toFixed(1) })
+        : el("span", { class: "cvss" });
+    const epss =
+      f.epss !== undefined
+        ? el("span", {
+            class: `epss${f.epssPercentile >= 0.95 ? " hot" : ""}`,
+            title: `${formatEPSS(f.epss)} chance of exploitation in the next 30 days\n${formatPercentile(f.epssPercentile || 0)} percentile of all scored CVEs`,
+            text: formatEPSS(f.epss),
+          })
+        : el("span", { class: "epss" });
+    return el("span", { class: "risk" }, cvss, epss);
+  }
+
+  // What to handle first: exploited, then likely to be exploited, then
+  // severe. Muted (suppressed, accepted) rows sink to the bottom.
+  function priority(a, b) {
+    return (
+      muted(a) - muted(b) ||
+      (isMalware(b) ? 1 : 0) - (isMalware(a) ? 1 : 0) ||
+      (b.kev ? 1 : 0) - (a.kev ? 1 : 0) ||
+      (b.epss ?? -1) - (a.epss ?? -1) ||
+      (b.cvss ?? -1) - (a.cvss ?? -1) ||
+      SEVERITIES.indexOf(a.severity) - SEVERITIES.indexOf(b.severity) ||
+      a.range.start.line - b.range.start.line
+    );
+  }
+
+  // "All repositories": one collapsible section per repository, holding the
+  // usual file or package groups.
+  function repoSection(root, label, items, by) {
     const st = data.state;
-    const key = `${g.by}:${g.key}`;
+    const key = `repo:${root}`;
+    const collapsed = st.collapsed.includes(key);
+    const toggle = () => setView({ collapsed: collapsed ? st.collapsed.filter((k) => k !== key) : [...st.collapsed, key] });
+    return el(
+      "div",
+      { class: "repo-section" },
+      el(
+        "button",
+        { class: "group-head repo-head", "aria-expanded": !collapsed, onclick: toggle, title: root },
+        icon(collapsed ? "chevron-right" : "chevron-down", "chev"),
+        icon("repo"),
+        el("span", { class: "group-label", text: label }),
+        el("span", { class: "spacer" }),
+        items.some((f) => isMalware(f) && !muted(f)) ? biohazard() : null,
+        items.some((f) => f.kev && !muted(f)) ? flame() : null,
+        sevBadges(items),
+      ),
+      collapsed ? null : el("div", { class: "repo-groups" }, groupFindings(items, by).map((g) => groupNode(g, root))),
+    );
+  }
+
+  function groupNode(g, scope) {
+    const st = data.state;
+    const key = `${scope ? scope + "|" : ""}${g.by}:${g.key}`;
     const collapsed = st.collapsed.includes(key);
     const toggle = () => setView({ collapsed: collapsed ? st.collapsed.filter((k) => k !== key) : [...st.collapsed, key] });
     const limit = shown[key] || PAGE;
-    const items = g.items.slice().sort((a, b) => (muted(a) - muted(b)) || SEVERITIES.indexOf(a.severity) - SEVERITIES.indexOf(b.severity) || a.range.start.line - b.range.start.line);
+    const items = g.items.slice().sort(g.by === "file" || g.by === "rule" ? (a, b) => muted(a) - muted(b) || SEVERITIES.indexOf(a.severity) - SEVERITIES.indexOf(b.severity) || a.range.start.line - b.range.start.line : priority);
+    const kev = g.items.some((f) => f.kev && !muted(f));
+    const malware = g.items.some((f) => isMalware(f) && !muted(f));
+    const risky = g.items.some(hasRisk);
     return el(
       "div",
-      { class: "group" },
+      { class: `group${risky ? " with-risk" : ""}` },
       el(
         "button",
-        { class: "group-head", "aria-expanded": !collapsed, onclick: toggle, title: g.by === "file" ? g.key : g.label },
+        { class: "group-head", "aria-expanded": !collapsed, onclick: toggle, title: g.by === "file" || g.by === "package" ? g.key.replace(/@$/, "") : g.label },
         icon(collapsed ? "chevron-right" : "chevron-down", "chev"),
         g.by === "severity" ? el("span", { class: `dot sev-${g.key}` }) : icon(g.iconName),
         el("span", { class: "group-label", text: g.label }),
         g.sub ? el("span", { class: "group-sub", text: g.sub }) : null,
         el("span", { class: "spacer" }),
+        malware ? biohazard() : null,
+        kev ? flame() : null,
         sevBadges(g.items),
       ),
       collapsed
@@ -618,7 +854,7 @@
         : el(
             "div",
             { class: "rows" },
-            items.slice(0, limit).map((f) => row(f, g.by)),
+            items.slice(0, limit).map((f) => row(f, g.by, risky)),
             items.length > limit
               ? el("button", { class: "more", onclick: () => ((shown[key] = limit + PAGE), render()) }, `Show ${Math.min(PAGE, items.length - limit)} more of ${items.length - limit}`)
               : null,
@@ -626,13 +862,14 @@
     );
   }
 
-  function row(f, by) {
+  function row(f, by, risky) {
     const line = f.range.start.line + 1;
-    let meta;
-    if (f.history) meta = (f.commit || "").slice(0, 7);
-    else if (by === "package") meta = f.advisoryId || "";
-    else if (by === "file") meta = f.uri ? `L${line}` : "";
-    else meta = f.path ? `${f.path.split("/").pop()}${f.uri ? ":" + line : ""}` : f.component || "";
+    // Second line: what identifies the finding, small and muted.
+    let sub;
+    if (f.history) sub = `in git history · ${(f.commit || "").slice(0, 7)}`;
+    else if (f.advisoryId) sub = [f.advisoryId, by !== "package" && f.component].filter(Boolean).join(" · ");
+    else if (by === "file") sub = [f.rule, f.uri ? `L${line}` : ""].filter(Boolean).join(" · ");
+    else sub = [f.rule, f.path ? `${f.path.split("/").pop()}${f.uri ? ":" + line : ""}` : ""].filter(Boolean).join(" · ");
     // State as small icons (tooltip explains), so the title keeps the room.
     const marks = [];
     if (f.history) marks.push(["history", "mark-warn", `No longer in the code, still in git history (commit ${(f.commit || "").slice(0, 7)}): rotate the secret`]);
@@ -641,21 +878,46 @@
     if (carried(f)) marks.push(["unverified", "", "Not re-confirmed by the latest scan"]);
     if (f.edited && !f.history) marks.push(["diff-modified", "", "Code changed since the scan; may already be fixed"]);
     const open = () => (f.uri ? send({ type: "open", uri: f.uri, line: f.range.start.line }) : send({ type: "openWeb", url: f.webUrl }));
+    const tooltip = [
+      f.title,
+      isMalware(f) && MALWARE_TITLE,
+      f.kev && "Known exploited (CISA KEV / ENISA EUVD)",
+      f.cvss !== undefined && `CVSS ${f.cvssVersion || ""} ${f.cvss.toFixed(1)}`.replace(/\s+/g, " "),
+      f.epss !== undefined && `EPSS ${formatEPSS(f.epss)} (${formatPercentile(f.epssPercentile || 0)} percentile)`,
+      f.advisoryId && `Advisory: ${f.advisoryId}`,
+      f.component && `Package: ${f.component}`,
+      f.scanner && `Scanner: ${f.scanner}`,
+      f.rule && `Rule: ${f.rule}`,
+      f.path && `${f.path}${f.uri ? ":" + line : ""}`,
+      ...marks.map((m) => m[2]),
+    ]
+      .filter(Boolean)
+      .join("\n");
     return el(
       "div",
       {
         class: `item${muted(f) ? " muted" : ""}${carried(f) ? " carried" : ""}`,
         tabindex: "0",
         role: "button",
-        title: [f.title, f.scanner && `Scanner: ${f.scanner}`, f.rule && `Rule: ${f.rule}`, f.component && `Package: ${f.component}`, f.path && `${f.path}${f.uri ? ":" + line : ""}`, ...marks.map((m) => m[2])].filter(Boolean).join("\n"),
+        title: tooltip,
         onclick: open,
         onkeydown: (e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), open()),
       },
-      el("span", { class: `dot sev-${f.severity}`, title: f.severity, role: "img", "aria-label": f.severity }),
-      el("span", { class: "title", text: f.title || f.rule || f.advisoryId || "finding" }),
-      f.kev ? el("span", { class: "tag tag-kev", title: "Known exploited vulnerability (CISA KEV)", text: "KEV" }) : null,
-      marks.length ? el("span", { class: "marks" }, marks.map(([name, cls, title]) => el("span", { class: `codicon codicon-${name} mark ${cls}`, title, "aria-label": title, role: "img" }))) : null,
-      el("span", { class: "meta", text: meta }),
+      el("span", { class: "lead" }, el("span", { class: `dot sev-${f.severity}`, title: f.severity, role: "img", "aria-label": f.severity }), isMalware(f) ? biohazard() : f.kev ? flame() : null),
+      el(
+        "span",
+        { class: "body" },
+        el("span", { class: "title", text: f.title || f.rule || f.advisoryId || "finding" }),
+        sub || marks.length
+          ? el(
+              "span",
+              { class: "sub" },
+              sub ? el("span", { class: "sub-text", text: sub }) : null,
+              marks.map(([name, cls, title]) => el("span", { class: `codicon codicon-${name} mark ${cls}`, title, "aria-label": title, role: "img" })),
+            )
+          : null,
+      ),
+      risky ? riskCells(f) : null,
       el(
         "button",
         { class: "icon-btn row-action", title: "Open in hibou", onclick: (e) => (e.stopPropagation(), send({ type: "openWeb", url: f.webUrl })) },

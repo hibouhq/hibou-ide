@@ -45,7 +45,13 @@ class Extension {
     this.log = vscode.window.createOutputChannel("hibou", { log: true });
     this.statusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 50);
     this.statusItem.command = "hibou.showMenu";
-    this.panel = new FindingsPanel(context, () => this.client, () => this.current(), (request) => this.serverRequests.has(request));
+    this.panel = new FindingsPanel(
+      context,
+      () => this.client,
+      () => this.current(),
+      (request) => this.serverRequests.has(request),
+      () => this.statuses,
+    );
     this.coverage = new CoverageGutter(() => this.client);
     const c = context.subscriptions;
     c.push(this.log, this.statusItem, this.coverage, this.panel);
@@ -162,6 +168,7 @@ class Extension {
     });
     this.setStatuses(await client.sendRequest<Status[]>("hibou/status"));
     void this.registerYamlSchema();
+    void this.shareGitRepositories(client);
   }
 
   async stop(): Promise<void> {
@@ -470,6 +477,35 @@ class Extension {
     } catch (err) {
       void vscode.window.showErrorMessage(`hibou: ${errorText(err)}`);
     }
+  }
+
+  /** Tells the language server about the repositories VS Code's git knows
+   * (the Source Control list, following git.repositoryScanMaxDepth and
+   * friends), now and as they open, so hibou tracks the same ones. */
+  private async shareGitRepositories(client: LanguageClient): Promise<void> {
+    interface GitRepo {
+      rootUri: vscode.Uri;
+    }
+    interface GitAPI {
+      state: string;
+      repositories: GitRepo[];
+      onDidOpenRepository: vscode.Event<GitRepo>;
+      onDidChangeState: vscode.Event<string>;
+    }
+    const ext = vscode.extensions.getExtension<{ getAPI(version: 1): GitAPI }>("vscode.git");
+    if (!ext) return;
+    let git: GitAPI;
+    try {
+      git = (ext.isActive ? ext.exports : await ext.activate()).getAPI(1);
+    } catch {
+      return;
+    }
+    const send = () => {
+      if (this.client !== client || client.state !== State.Running) return;
+      void client.sendNotification("hibou/repositories", { roots: git.repositories.map((r) => r.rootUri.toString()) });
+    };
+    this.context.subscriptions.push(git.onDidOpenRepository(send), git.onDidChangeState(send));
+    send();
   }
 
   /** Validates .hibou.yaml against the server's schema through the Red Hat

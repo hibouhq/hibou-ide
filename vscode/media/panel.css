@@ -57,6 +57,11 @@ select:focus-visible {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.repo-select {
+  min-width: 0;
+  max-width: 60%;
+  font-weight: 600;
+}
 .branch {
   display: inline-flex;
   align-items: center;
@@ -350,11 +355,8 @@ select {
   margin-top: 5px;
 }
 .marks {
-  flex: none;
   display: inline-flex;
   gap: 2px;
-  margin-top: 1px;
-  color: var(--vscode-descriptionForeground);
 }
 .mark {
   font-size: 13px !important;
@@ -594,4 +596,163 @@ select {
 }
 .sg-value .codicon {
   color: var(--vscode-symbolIcon-constantForeground, #4fc1ff);
+}
+
+/* ---- risk: KEV flame, CVSS, EPSS (same vocabulary as the web UI) ---- */
+.kev {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--sev-critical);
+  color: #fff;
+}
+.kev svg {
+  width: 10px;
+  height: 10px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.kev-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 12px 0 0;
+  font-size: 0.92em;
+  color: var(--sev-critical);
+}
+.kev-line:hover {
+  text-decoration: underline;
+}
+
+.item .lead {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 26px;
+  margin-top: 1px;
+}
+.item .lead .dot {
+  margin-top: 0;
+}
+.item .body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.item .sub {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.86em;
+}
+.item .sub-text {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--vscode-editor-font-family);
+}
+
+/* Fixed columns so scores line up from row to row, like the web table. */
+.risk {
+  flex: none;
+  display: inline-grid;
+  grid-template-columns: 30px 44px;
+  gap: 4px;
+  text-align: right;
+  font-family: var(--vscode-editor-font-family);
+  font-size: 0.9em;
+  font-variant-numeric: tabular-nums;
+  margin-top: 1px;
+}
+.cvss {
+  font-weight: 600;
+}
+.band-critical {
+  color: var(--vscode-charts-red, #fca5a5);
+}
+.band-high {
+  color: var(--vscode-charts-orange, #fdba74);
+}
+.band-medium {
+  color: var(--vscode-charts-yellow, #fcd34d);
+}
+.band-low {
+  color: var(--vscode-charts-blue, #7dd3fc);
+}
+.band-none,
+.epss {
+  color: var(--vscode-descriptionForeground);
+}
+.epss.hot {
+  color: var(--vscode-charts-orange, #fdba74);
+  font-weight: 600;
+}
+.group-head .kev {
+  margin-right: 2px;
+}
+
+.list-head {
+  display: flex;
+  padding: 0 38px 2px 14px; /* aligns with the rows' risk column */
+  font-size: 0.75em;
+  letter-spacing: 0.04em;
+  color: var(--vscode-descriptionForeground);
+}
+.list-head .risk {
+  font-family: inherit;
+  font-weight: 600;
+}
+
+/* Malware: the web UI's violet biohazard, no badge behind it. */
+.malware {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  color: #a371f7;
+}
+.malware svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.malware-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 12px 0 0;
+  font-size: 0.92em;
+  color: #a371f7;
+}
+.malware-line:hover {
+  text-decoration: underline;
+}
+
+/* "All repositories": a repository header above its groups. */
+.repo-head {
+  padding-left: 6px;
+  border-top: 1px solid var(--vscode-widget-border, transparent);
+  font-size: 1.02em;
+}
+.repo-groups .group-head {
+  padding-left: 20px;
+}
+.repo-groups .item {
+  padding-left: 42px;
 }
