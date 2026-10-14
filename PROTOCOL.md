@@ -103,5 +103,7 @@ dialog:
 | `hibou.suppress` | `{uri, fingerprint, line}` | asks for a justification, calls `hibou/suppressionEdit`, applies the edit |
 | `hibou.triage` | `{uri, fingerprint, action}` | asks for a reason (and expiry for `accept`), calls `hibou/triage` |
 
-Server-side commands: `hibou.openFinding [fingerprint]` (opens the browser via
-`window/showDocument`), `hibou.refresh`.
+Server-side commands, advertised in `executeCommandProvider` under the
+`hibou.server.*` prefix so they never collide with the extensions' own
+`hibou.*` commands: `hibou.server.openFinding [fingerprint]` (opens the browser
+via `window/showDocument`), `hibou.server.refresh`.

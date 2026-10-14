@@ -148,20 +148,17 @@
       {
         "command": "hibou.suppress",
         "title": "Suppress Finding with Native Directive",
-        "category": "hibou",
-        "enablement": "false"
+        "category": "hibou"
       },
       {
         "command": "hibou.triage",
         "title": "Triage Finding",
-        "category": "hibou",
-        "enablement": "false"
+        "category": "hibou"
       },
       {
         "command": "hibou.openFindingItem",
         "title": "Open Finding",
-        "category": "hibou",
-        "enablement": "false"
+        "category": "hibou"
       }
     ],
     "menus": {

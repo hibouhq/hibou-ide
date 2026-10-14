@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -114,6 +115,15 @@ class Extension {
       return;
     }
 
+    // A hibou release older than the IDE support has no `lsp` command; say so
+    // instead of letting the client restart it in a loop.
+    if (spawnSync(binary, ["lsp", "--help"], { stdio: "ignore", timeout: 10_000 }).status !== 0) {
+      const msg = `${binary} has no 'lsp' command: the hibou server (${this.server}) runs a release older than the IDE support. Upgrade hibou, or set hibou.path to a newer hibou binary.`;
+      this.log.error(msg);
+      this.setStatuses([{ root: "", state: "error", message: msg }]);
+      return;
+    }
+
     const env: NodeJS.ProcessEnv = { ...process.env, HIBOU_SERVER: this.server };
     const token = await this.context.secrets.get(secretKey(this.server));
     if (token) env.HIBOU_TOKEN = token; // environment, never argv (ADR-042 §3)
@@ -146,6 +156,10 @@ class Extension {
       await client.start();
     } catch (err) {
       this.log.appendLine(`Language server failed to start: ${String(err)}`);
+      // Dispose, not just stop: a failed client keeps its registered
+      // commands, and the next start would collide with them.
+      this.client = undefined;
+      await client.dispose().catch(() => undefined);
       return;
     }
     const advertised = (client.initializeResult?.capabilities as { experimental?: { hibou?: { protocol?: number; requests?: string[] } } } | undefined)?.experimental?.hibou;
@@ -171,7 +185,14 @@ class Extension {
   async stop(): Promise<void> {
     const client = this.client;
     this.client = undefined;
-    if (client && client.state !== State.Stopped) await client.stop();
+    if (!client || client.state === State.Stopped) return;
+    try {
+      // dispose() also unregisters the commands the client registered.
+      await client.dispose();
+    } catch (err) {
+      // A client whose start failed cannot be stopped; nothing to clean up.
+      this.log.info(`stop: ${errorText(err)}`);
+    }
   }
 
   private ready: Promise<void> = Promise.resolve();
