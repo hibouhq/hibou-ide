@@ -337,11 +337,13 @@
   function row(f, by) {
     const line = f.range.start.line + 1;
     let meta;
-    if (by === "package") meta = f.advisoryId || "";
+    if (f.history) meta = `commit ${(f.commit || "").slice(0, 7)}`;
+    else if (by === "package") meta = f.advisoryId || "";
     else if (by === "file") meta = [f.rule, f.uri ? `L${line}` : ""].filter(Boolean).join(" · ");
     else meta = [f.path ? `${f.path.split("/").pop()}${f.uri ? ":" + line : ""}` : f.component].filter(Boolean).join(" · ");
     const tags = [];
     if (f.kev) tags.push(["kev", "Known exploited vulnerability (CISA KEV)"]);
+    if (f.history) tags.push(["history", `No longer in the code, still in git history (commit ${(f.commit || "").slice(0, 7)}): rotate the secret`]);
     if (f.status === "suppressed") tags.push(["suppressed", "Suppressed in source"]);
     if (f.accepted) tags.push(["accepted", "Accepted in hibou"]);
     if (carried(f)) tags.push(["unconfirmed", "Not re-confirmed by the latest scan"]);

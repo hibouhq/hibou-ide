@@ -404,6 +404,11 @@ select {
   background: var(--sev-critical);
 }
 
+.tag-history {
+  color: var(--sev-high);
+  border-color: var(--sev-high);
+}
+
 .more {
   display: block;
   margin: 2px 0 4px 30px;
