@@ -32,10 +32,25 @@
   const shown = {}; // group key -> rows shown
   let draftQuery = null; // text typed but not applied yet
 
+  // CWE catalog answers (async): sets once, searches per query.
+  let cweSets = null;
+  const cweSearches = new Map(); // query -> entries
+  let cweRequest = 0;
+
   window.addEventListener("message", (event) => {
-    if (event.data && event.data.type === "update") {
-      data = event.data;
+    const msg = event.data;
+    if (!msg) return;
+    if (msg.type === "update") {
+      data = msg;
       render();
+    } else if (msg.type === "cwe") {
+      if (msg.kind === "cweSets") cweSets = msg.data;
+      else cweSearches.set(msg.query, (msg.data && msg.data.entries) || []);
+      const input = document.getElementById("q");
+      if (input && document.activeElement === input) {
+        computeSuggestions(input);
+        renderSuggestions();
+      }
     }
   });
   vscode.postMessage({ type: "ready" });
@@ -73,14 +88,30 @@
   const carried = (f) => f.presence && f.presence !== "reported";
   const muted = (f) => f.status === "suppressed" || f.accepted;
 
-  function filtered(tab) {
+  // The tabs are shortcuts that write a type condition into the filter, so
+  // the filter bar always shows what is applied (like the web UI's CWE page,
+  // which opens the findings list with a query).
+  const TAB_TERMS = {
+    code: "-type:dependency,container,secret",
+    dependencies: "type:dependency,container",
+    secrets: "type:secret",
+  };
+  const TYPE_TERM = /(^|\s)-?type:\S+/g;
+
+  function activeTab(query) {
+    const terms = (query.match(TYPE_TERM) || []).map((t) => t.trim());
+    if (terms.length !== 1) return "";
+    return Object.keys(TAB_TERMS).find((k) => TAB_TERMS[k] === terms[0]) || "";
+  }
+
+  function withTab(query, tab) {
+    const rest = query.replace(TYPE_TERM, " ").replace(/\s+/g, " ").trim();
+    return tab ? `${TAB_TERMS[tab]}${rest ? " " + rest : ""}` : rest;
+  }
+
+  function visibleFindings() {
     const st = data.state;
-    return data.findings.filter(
-      (f) =>
-        tabOf(f) === tab &&
-        (!st.thisFile || (f.uri && f.uri === data.activeUri)) &&
-        (!st.hideUnconfirmed || !carried(f)),
-    );
+    return data.findings.filter((f) => (!st.thisFile || (f.uri && f.uri === data.activeUri)) && (!st.hideUnconfirmed || !carried(f)));
   }
 
   function counts(list) {
@@ -122,7 +153,7 @@
   function overview() {
     const st = data.status;
     if (!st || st.state !== "ready") return emptyState(st);
-    const all = data.findings.filter((f) => !muted(f));
+    const all = (data.all || data.findings).filter((f) => !muted(f));
     const c = counts(all);
     const total = Object.values(c).reduce((a, b) => a + b, 0);
     const repo = st.repo ? `${st.repo.org}/${st.repo.repo}` : "";
@@ -200,15 +231,25 @@
   // ---- tabs and toolbar ---------------------------------------------------
   function tabs() {
     if (!data.status || data.status.state !== "ready") return el("span");
-    const st = data.state;
+    const current = activeTab(data.state.query);
     const tab = (id, label, iconName) => {
-      const list = filtered(id).filter((f) => !muted(f));
+      const n = (data.all || data.findings).filter((f) => tabOf(f) === id && !muted(f)).length;
+      const on = current === id;
       return el(
         "button",
-        { class: `tab${st.tab === id ? " active" : ""}`, role: "tab", "aria-selected": st.tab === id, onclick: () => setView({ tab: id }) },
+        {
+          class: `tab${on ? " active" : ""}`,
+          role: "tab",
+          "aria-selected": on,
+          title: on ? "Remove this filter" : `Filter: ${TAB_TERMS[id]}`,
+          onclick: () => {
+            draftQuery = null;
+            setView({ query: withTab(data.state.query, on ? "" : id) });
+          },
+        },
         icon(iconName),
         ` ${label}`,
-        el("span", { class: "tab-count", text: String(list.length) }),
+        el("span", { class: "tab-count", text: String(n) }),
       );
     };
     return el("nav", { class: "tabs", role: "tablist" }, tab("code", "Code", "code"), tab("dependencies", "Dependencies", "package"), tab("secrets", "Secrets", "key"));
@@ -240,10 +281,16 @@
       },
       onblur: () => setTimeout(() => ((suggest.items = []), renderSuggestions()), 120),
       onkeydown: (e) => {
-        const open = suggest.items.length > 0;
+        const open = suggest.items.some(selectable);
         if (open && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
           e.preventDefault();
-          suggest.index = (suggest.index + (e.key === "ArrowDown" ? 1 : suggest.items.length - 1)) % suggest.items.length;
+          const step = e.key === "ArrowDown" ? 1 : suggest.items.length - 1;
+          let next = suggest.index;
+          for (let i = 0; i < suggest.items.length; i++) {
+            next = (next + step) % suggest.items.length;
+            if (selectable(suggest.items[next])) break;
+          }
+          suggest.index = next;
           renderSuggestions();
         } else if (open && (e.key === "Tab" || (e.key === "Enter" && suggest.picked))) {
           e.preventDefault();
@@ -284,7 +331,7 @@
       el("button", { class: `chip${on ? " on" : ""}`, title, "aria-pressed": on, onclick: () => setView(patch) }, icon(iconName), ` ${label}`);
     const group = el(
       "select",
-      { class: "group", title: "Group by", disabled: st.tab === "dependencies", onchange: (e) => setView({ groupBy: e.target.value }) },
+      { class: "group", title: "Group by (dependencies always group by package)", onchange: (e) => setView({ groupBy: e.target.value }) },
       [
         ["file", "By file"],
         ["severity", "By severity"],
@@ -325,7 +372,7 @@
 
   function valueCounts(field) {
     const counts = new Map();
-    for (const f of data.findings) {
+    for (const f of data.all || data.findings) {
       const v = field.dynamic(f);
       if (v) counts.set(v, (counts.get(v) || 0) + 1);
       if (field.key === "file" && v && v.includes("/")) {
@@ -336,11 +383,33 @@
     return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
   }
 
+  // CWEs in the current findings, with their titles and counts.
+  function cwesInView() {
+    const byId = new Map();
+    for (const f of data.all || data.findings) {
+      for (const c of f.cwes || []) {
+        const e = byId.get(c.id) || { id: c.id, name: c.name, count: 0 };
+        e.count++;
+        byId.set(c.id, e);
+      }
+    }
+    return [...byId.values()].sort((a, b) => b.count - a.count || a.id - b.id);
+  }
+
+  function requestCWESearch(query, roots) {
+    const key = roots ? "" : query;
+    if (cweSearches.has(key)) return cweSearches.get(key);
+    cweSearches.set(key, null); // pending
+    send({ type: "cweSearch", id: ++cweRequest, query: key, roots });
+    return null;
+  }
+
   function computeSuggestions(input) {
     const text = input.value;
     const cursor = input.selectionStart ?? text.length;
     const { start, end, word } = wordAt(text, cursor);
     const items = [];
+    const header = (label) => items.push({ kind: "header", label });
     const colon = word.indexOf(":");
     const negated = word.startsWith("-") ? "-" : "";
     if (colon > 0) {
@@ -349,41 +418,78 @@
       const rawValue = word.slice(colon + 1);
       const comma = rawValue.lastIndexOf(",");
       const before = word.slice(0, colon + 1) + rawValue.slice(0, comma + 1);
-      const prefix = rawValue.slice(comma + 1).toLowerCase();
+      const prefix = rawValue.slice(comma + 1);
+      const lower = prefix.toLowerCase();
+      const value = (v, sub, count, iconName) => items.push({ insert: before + quote(v), label: v, sub, count, kind: "value", iconName });
       if (field) {
-        let options = [];
-        if (field.options) options = field.options.map((o) => [o, ""]);
-        if (field.suggestions) options = field.suggestions;
-        if (field.dynamic) options = valueCounts(field).map(([v, n]) => [v, `${n}`]);
-        for (const [value, detail] of options) {
-          if (value.toLowerCase().includes(prefix) && value.toLowerCase() !== prefix) {
-            items.push({ insert: before + quote(value), label: value, detail, kind: "value" });
+        if (!negated && !rawValue) items.push({ insert: `-${field.key}:`, label: `Exclude ${field.label.toLowerCase()}`, count: `-${field.key}:`, kind: "exclude" });
+        if (field.key === "cwe" || field.key === "cwe-tree") {
+          const id = lower.replace(/^cwe-/, "");
+          const local = cwesInView().filter((c) => !id || String(c.id).startsWith(id) || c.name.toLowerCase().includes(lower));
+          if (local.length) {
+            header("In this view");
+            for (const c of local.slice(0, 20)) value(String(c.id), c.name, String(c.count));
           }
+          const remote = id ? requestCWESearch(id, false) : field.key === "cwe-tree" ? requestCWESearch("", true) : [];
+          const seen = new Set(local.map((c) => c.id));
+          const rest = (remote || []).filter((c) => !seen.has(c.id));
+          if (rest.length) {
+            header(id ? "CWE catalog" : "Start from a pillar");
+            for (const c of rest.slice(0, 20)) value(String(c.id), c.name, c.descendants ? `${c.descendants} sub-types` : "");
+          } else if (remote === null) {
+            items.push({ kind: "hint", label: "Searching the CWE catalog…" });
+          }
+          if (!items.some((i) => i.kind === "value") && remote !== null && field.description) items.push({ kind: "hint", label: field.description });
+        } else if (field.key === "cwe-set" || field.key === "cwe-category") {
+          if (!cweSets) {
+            send({ type: "cweSets" });
+            items.push({ kind: "hint", label: "Loading CWE lists…" });
+          } else {
+            const list = field.key === "cwe-set" ? cweSets.sets || [] : cweSets.categories || [];
+            for (const set of list) {
+              if (!lower || set.slug.includes(lower) || set.name.toLowerCase().includes(lower)) value(set.slug, `${set.name} · ${set.member_count} CWEs`);
+            }
+          }
+        } else {
+          let options = [];
+          if (field.options) options = field.options.map((o) => [o, "", ""]);
+          if (field.suggestions) options = field.suggestions.map(([v, label]) => [v, label, ""]);
+          if (field.dynamic) options = valueCounts(field).map(([v, n]) => [v, "", String(n)]);
+          for (const [v, sub, count] of options) {
+            if (v.toLowerCase().includes(lower) && v.toLowerCase() !== lower) value(v, sub, count);
+          }
+          if (!items.some((i) => i.kind === "value") && field.description) items.push({ kind: "hint", label: field.description });
         }
-        if (!items.length && field.description) items.push({ insert: null, label: field.description, detail: "", kind: "hint" });
       }
     } else {
       const prefix = word.slice(negated.length).toLowerCase();
       for (const field of FIELDS) {
         if (field.key.startsWith(prefix) || (prefix && field.label.toLowerCase().startsWith(prefix))) {
-          items.push({ insert: `${negated}${field.key}:`, label: `${field.key}:`, detail: field.label, kind: "key" });
+          items.push({ insert: `${negated}${field.key}:`, label: `${field.key}:`, sub: field.label, kind: "key" });
         }
       }
       const before = text.slice(0, start).trim();
       if (before && !/\b(AND|OR|NOT)$/i.test(before) && !before.endsWith("(")) {
-        for (const [c, detail] of CONNECTIVES) if (c.toLowerCase().startsWith(prefix)) items.push({ insert: c, label: c, detail, kind: "op" });
+        for (const [c, sub] of CONNECTIVES) if (c.toLowerCase().startsWith(prefix)) items.push({ insert: c, label: c, sub, kind: "op" });
       }
       if (!prefix) items.splice(12);
     }
-    suggest = { items: items.slice(0, 50), index: 0, start, end, picked: false };
+    const list = items.slice(0, 60);
+    // Pre-select the first real completion, not "Exclude …": Tab must not
+    // negate the filter by accident.
+    let first = list.findIndex((i) => selectable(i) && i.kind !== "exclude");
+    if (first < 0) first = list.findIndex(selectable);
+    suggest = { items: list, index: Math.max(first, 0), start, end, picked: false };
   }
+
+  const selectable = (item) => item.kind !== "header" && item.kind !== "hint";
 
   function quote(value) {
     return /[\s(),]/.test(value) ? JSON.stringify(value) : value;
   }
 
   function accept(input, item) {
-    if (!item || item.insert === null) return;
+    if (!item || !selectable(item)) return;
     const text = input.value;
     const tail = text.slice(suggest.end);
     const glue = item.kind === "key" ? "" : tail.startsWith(" ") ? "" : " ";
@@ -401,9 +507,13 @@
     const input = document.getElementById("q");
     if (!box || !input) return;
     input.setAttribute("aria-expanded", String(suggest.items.length > 0));
+    const iconFor = (item) =>
+      item.kind === "exclude" ? icon("remove", "sg-exclude-icon") : item.kind === "key" ? icon("symbol-field") : item.kind === "op" ? icon("symbol-operator") : null;
     box.replaceChildren(
-      ...suggest.items.map((item, i) =>
-        el(
+      ...suggest.items.map((item, i) => {
+        if (item.kind === "header") return el("div", { class: "sg-header", role: "presentation", text: item.label });
+        if (item.kind === "hint") return el("div", { class: "sg sg-hint", role: "presentation" }, icon("info"), el("span", { text: item.label }));
+        return el(
           "div",
           {
             class: `sg sg-${item.kind}${i === suggest.index ? " active" : ""}`,
@@ -414,25 +524,28 @@
               accept(input, item);
             },
           },
-          item.kind === "hint" ? icon("info") : icon(item.kind === "key" ? "symbol-field" : item.kind === "op" ? "symbol-operator" : "symbol-value"),
-          el("span", { class: "sg-label", text: item.label }),
-          item.detail ? el("span", { class: "sg-detail", text: item.detail }) : null,
-        ),
-      ),
+          iconFor(item),
+          el("span", { class: "sg-text" }, el("span", { class: "sg-label", text: item.kind === "value" && /^\d+$/.test(item.label) && suggest.items.some((x) => x.kind === "header") ? `CWE-${item.label}` : item.label }), item.sub ? el("span", { class: "sg-sub", text: item.sub }) : null),
+          item.count ? el("span", { class: "sg-count", text: item.count }) : null,
+        );
+      }),
     );
     box.classList.toggle("open", suggest.items.length > 0);
+    const active = box.querySelector(".sg.active");
+    if (active) active.scrollIntoView({ block: "nearest" });
   }
 
   // ---- list -----------------------------------------------------------------
   function body() {
     if (!data.status || data.status.state !== "ready") return el("span");
     const st = data.state;
-    const list = filtered(st.tab);
+    const list = visibleFindings();
     if (!list.length) {
-      const why = st.query || st.thisFile || st.hideUnconfirmed ? "Nothing matches the filter." : st.tab === "code" ? "No code findings." : `No ${st.tab}.`;
+      const why = st.query || st.thisFile || st.hideUnconfirmed ? "Nothing matches the filter." : "No open findings.";
       return el("section", { class: "empty small" }, icon("check", "big ok"), el("div", { class: "muted", text: why }));
     }
-    const groups = groupFindings(list, st.tab === "dependencies" ? "package" : st.groupBy);
+    const by = activeTab(st.query) === "dependencies" ? "package" : st.groupBy;
+    const groups = groupFindings(list, by);
     return el("section", { class: "list" }, groups.map((g) => groupNode(g)));
   }
 
@@ -459,6 +572,14 @@
           iconName = "symbol-ruler";
           break;
         default:
+          if (!f.path && f.package) {
+            // A dependency without a manifest location: group by package.
+            key = `${f.package}@${f.version || ""}`;
+            label = f.package;
+            sub = f.version || "";
+            iconName = "package";
+            break;
+          }
           key = f.path || "(no file)";
           label = (f.path || "(no file)").split("/").pop();
           sub = f.path && f.path.includes("/") ? f.path.slice(0, f.path.lastIndexOf("/")) : "";
@@ -473,7 +594,7 @@
 
   function groupNode(g) {
     const st = data.state;
-    const key = `${st.tab}:${g.by}:${g.key}`;
+    const key = `${g.by}:${g.key}`;
     const collapsed = st.collapsed.includes(key);
     const toggle = () => setView({ collapsed: collapsed ? st.collapsed.filter((k) => k !== key) : [...st.collapsed, key] });
     const limit = shown[key] || PAGE;

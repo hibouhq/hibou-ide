@@ -527,16 +527,59 @@ select {
   color: var(--vscode-editorSuggestWidget-selectedForeground, var(--vscode-list-activeSelectionForeground));
   background: var(--vscode-editorSuggestWidget-selectedBackground, var(--vscode-list-activeSelectionBackground));
 }
+.sg {
+  align-items: flex-start;
+  padding: 4px 10px;
+}
+.sg .codicon {
+  margin-top: 2px;
+}
+.sg-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
 .sg-label {
-  font-family: var(--vscode-editor-font-family);
+  font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.sg-detail {
-  margin-left: auto;
-  padding-left: 12px;
+.sg-key .sg-label,
+.sg-op .sg-label {
+  font-family: var(--vscode-editor-font-family);
+  font-weight: normal;
+}
+.sg-sub {
   color: var(--vscode-descriptionForeground);
   font-size: 0.9em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sg.active .sg-sub {
+  color: inherit;
+  opacity: 0.85;
+}
+.sg-count {
+  flex: none;
+  padding-left: 12px;
+  color: var(--vscode-descriptionForeground);
+  font-family: var(--vscode-editor-font-family);
+  font-size: 0.9em;
+}
+.sg-header {
+  padding: 6px 10px 2px;
+  font-size: 0.78em;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--vscode-descriptionForeground);
+}
+.sg-exclude .sg-label {
+  font-weight: 600;
+}
+.sg-exclude-icon {
+  color: var(--vscode-errorForeground);
 }
 .sg-hint {
   white-space: normal;

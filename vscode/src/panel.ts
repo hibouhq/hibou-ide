@@ -23,6 +23,9 @@ export interface PanelFinding {
   edited?: boolean;
   kev?: boolean;
   presence?: string;
+  history?: boolean;
+  commit?: string;
+  cwes?: { id: number; name: string }[];
   webUrl: string;
 }
 
@@ -50,7 +53,9 @@ type FromWebview =
   | { type: "openWeb"; url: string }
   | { type: "setView"; patch: Partial<ViewState> }
   | { type: "refresh" }
-  | { type: "command"; command: string };
+  | { type: "command"; command: string }
+  | { type: "cweSets" }
+  | { type: "cweSearch"; id: number; query: string; roots?: boolean };
 
 /**
  * The hibou side panel: overview (repository, scan, gate, severities), tabs,
@@ -63,6 +68,8 @@ export class FindingsPanel implements vscode.WebviewViewProvider, vscode.Disposa
   private view: vscode.WebviewView | undefined;
   private state: ViewState;
   private findings: PanelFinding[] = [];
+  /** Every finding, unfiltered: tab counts and "in this view" completion. */
+  private all: PanelFinding[] = [];
   private error = "";
   private presets: Preset[] = [];
   private presetsError = "";
@@ -107,6 +114,7 @@ export class FindingsPanel implements vscode.WebviewViewProvider, vscode.Disposa
       state: this.state,
       status,
       findings: this.findings,
+      all: this.all,
       error: this.error,
       presets: this.presets,
       presetsError: this.presetsError,
@@ -126,9 +134,16 @@ export class FindingsPanel implements vscode.WebviewViewProvider, vscode.Disposa
     this.loading = true;
     this.post();
     try {
-      const res = await client.sendRequest<{ findings: PanelFinding[]; error?: string }>("hibou/findings", { query: this.state.query });
-      this.findings = res.findings ?? [];
-      this.error = res.error ?? "";
+      const all = await client.sendRequest<{ findings: PanelFinding[] }>("hibou/findings", {});
+      this.all = all.findings ?? [];
+      if (this.state.query) {
+        const res = await client.sendRequest<{ findings: PanelFinding[]; error?: string }>("hibou/findings", { query: this.state.query });
+        this.findings = res.findings ?? [];
+        this.error = res.error ?? "";
+      } else {
+        this.findings = this.all;
+        this.error = "";
+      }
     } catch (err) {
       this.findings = [];
       this.error = err instanceof Error ? err.message : String(err);
@@ -172,6 +187,19 @@ export class FindingsPanel implements vscode.WebviewViewProvider, vscode.Disposa
         await vscode.commands.executeCommand("hibou.refresh");
         this.refresh(0);
         return;
+      case "cweSets":
+      case "cweSearch": {
+        const client = this.client();
+        const request = msg.type === "cweSets" ? "hibou/cweSets" : "hibou/cweSearch";
+        if (!client || client.state !== State.Running || !this.supports(request)) return;
+        try {
+          const data = await client.sendRequest(request, msg.type === "cweSearch" ? { query: msg.query, roots: msg.roots } : undefined);
+          void this.view?.webview.postMessage({ type: "cwe", kind: msg.type, id: msg.type === "cweSearch" ? msg.id : 0, query: msg.type === "cweSearch" ? msg.query : "", data });
+        } catch {
+          // Completion is best effort.
+        }
+        return;
+      }
       case "command":
         if (["hibou.signIn", "hibou.setServer", "hibou.openRepo", "hibou.checkStagedSecrets"].includes(msg.command)) {
           await vscode.commands.executeCommand(msg.command);
