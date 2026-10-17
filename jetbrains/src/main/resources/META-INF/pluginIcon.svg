@@ -1,4 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 64 64" role="img" aria-label="Hibou">
-  <rect width="64" height="64" rx="12" fill="#030712" />
-  <path d="M18 46V18h8v10h12V18h8v28h-8V36H26v10h-8Z" fill="#f9fafb" />
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" width="40" height="40" role="img" aria-label="Hibou"><g transform="scale(.15625)"><rect width="256" height="256" rx="32" fill="#0b0f1a" />
+  <path d="M44 20 88 60V208H44Z" fill="#58a6ff" />
+  <path d="M212 20 168 60V208H212Z" fill="#58a6ff" />
+  <rect x="44" y="120" width="168" height="36" fill="#58a6ff" />
+  <circle cx="106" cy="180" r="18.4" fill="#fbbf24" />
+  <circle cx="150" cy="180" r="18.4" fill="#fbbf24" />
+  <circle cx="106" cy="180" r="7.2" fill="#0b0f1a" />
+  <circle cx="150" cy="180" r="7.2" fill="#0b0f1a" />
+  <path d="M128 196 118 206 128 216 138 206Z" fill="#fbbf24" /></g></svg>

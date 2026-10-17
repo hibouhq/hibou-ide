@@ -30,7 +30,7 @@
     "vulnerabilities",
     "devsecops"
   ],
-  "icon": "media/icon.png",
+  "icon": "media/hibou-solid.png",
   "main": "./dist/extension.js",
   "activationEvents": [
     "workspaceContains:.git",
@@ -192,7 +192,7 @@
         {
           "id": "hibou",
           "title": "hibou",
-          "icon": "media/owl.svg"
+          "icon": "media/hibou-outline.svg"
         }
       ]
     },

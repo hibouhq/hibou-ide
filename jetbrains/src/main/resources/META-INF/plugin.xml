@@ -29,7 +29,7 @@
     <extensions defaultExtensionNs="com.intellij">
         <projectConfigurable parentId="tools" instance="com.hibouhq.hibou.ide.HibouConfigurable" id="com.hibouhq.hibou.settings" displayName="hibou"/>
         <statusBarWidgetFactory id="hibou.status" implementation="com.hibouhq.hibou.ide.HibouStatusWidgetFactory"/>
-        <toolWindow id="hibou" anchor="bottom" icon="AllIcons.Nodes.Plugin" factoryClass="com.hibouhq.hibou.ide.HibouToolWindowFactory"/>
+        <toolWindow id="hibou" anchor="bottom" icon="com.hibouhq.hibou.ide.HibouIcons.TOOL_WINDOW" factoryClass="com.hibouhq.hibou.ide.HibouToolWindowFactory"/>
         <notificationGroup id="hibou" displayType="BALLOON"/>
     </extensions>
 
