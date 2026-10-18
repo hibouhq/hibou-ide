@@ -5,8 +5,10 @@ where they were found.
 
 | Directory | Editors | Store |
 |---|---|---|
-| [`vscode/`](vscode/) | VS Code, Cursor, Windsurf, VSCodium, code-server, Theia | Visual Studio Marketplace, Open VSX |
-| [`jetbrains/`](jetbrains/) | IntelliJ IDEA, GoLand, PyCharm, WebStorm, Rider, CLion, PhpStorm, RubyMine, Android Studio | JetBrains Marketplace |
+| [`vscode/`](vscode/) | VS Code, Cursor, Windsurf, VSCodium, code-server, Theia | [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=hibouhq.hibou), [Open VSX](https://open-vsx.org/extension/hibouhq/hibou) |
+| [`jetbrains/`](jetbrains/) | IntelliJ IDEA, GoLand, PyCharm, WebStorm, Rider, CLion, PhpStorm, RubyMine, Android Studio | [JetBrains Marketplace](https://plugins.jetbrains.com/plugin/35258-hibou) |
+
+Setup and features: https://hibouhq.com/latest/guide/ide-extensions/
 
 Both are thin clients of `hibou lsp`, the language server built into the
 `hibou` binary. The extensions download it from the user's hibou server, so it
@@ -23,15 +25,25 @@ node scripts/compat.mjs /path/to/hibou       # handshake with a hibou binary
 
 ## Releasing
 
-Push a tag `vX.Y.Z`. CI builds both extensions, checks compatibility with the
-latest hibou release, and publishes to Open VSX and the JetBrains Marketplace
-when their secrets are set (`OVSX_PAT`, `JETBRAINS_*`, in the `marketplace`
-environment). Versions `0.x` are VS Code pre-releases.
+Both plugins share one version. To release, publish a GitHub Release with a
+new tag `vX.Y.Z` (Releases → Draft a new release → Generate release notes),
+or:
 
-The Visual Studio Marketplace is manual: download the `hibou-vscode` artifact
-from the tag's CI run and upload it on
-https://marketplace.visualstudio.com/manage/publishers/hibouhq (New extension
-the first time, then `…` → Update).
+```sh
+gh release create vX.Y.Z --generate-notes
+```
+
+The Release workflow runs CI, attaches the VSIX and the plugin ZIP to the
+release, and publishes to Open VSX (trusted publishing, no token) and the JetBrains
+Marketplace (secrets `JETBRAINS_*` in the `marketplace` environment).
+
+Manual steps:
+
+- Visual Studio Marketplace: upload `hibou-vscode.vsix` from the GitHub
+  Release on https://marketplace.visualstudio.com/manage/publishers/hibouhq
+  (New extension the first time, then `…` → Update).
+- JetBrains Marketplace, first version only: upload the plugin ZIP on
+  https://plugins.jetbrains.com (JetBrains reviews new plugins).
 
 ## License
 

@@ -1,0 +1,134 @@
+name: Release
+
+# Release both plugins: publish a GitHub Release with a new tag vX.Y.Z
+# (Releases → Draft a new release → Generate release notes → Publish, or
+# `gh release create vX.Y.Z --generate-notes`).
+#
+# The tag sets the version (the stores accept plain X.Y.Z only). This runs
+# the CI jobs, attaches the VSIX and the plugin ZIP to the release, then
+# publishes to Open VSX and the JetBrains Marketplace.
+# Add required reviewers to the `marketplace` environment to approve each
+# publish by hand.
+#
+# Manual steps, which the stores require:
+# - Visual Studio Marketplace: upload the VSIX from the GitHub Release on
+#   marketplace.visualstudio.com/manage/publishers/hibouhq (CI publishing
+#   there needs an Azure DevOps token, which needs an Azure subscription).
+# - JetBrains Marketplace, first version only: upload the ZIP on
+#   plugins.jetbrains.com (JetBrains reviews new plugins).
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - id: v
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          version="${TAG#v}"
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::tag must be vX.Y.Z (the stores accept plain X.Y.Z only), got $TAG"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  ci:
+    needs: version
+    uses: ./.github/workflows/ci.yml
+    with:
+      version: ${{ needs.version.outputs.version }}
+
+  release-assets:
+    needs: ci
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: dist
+          merge-multiple: true
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --clobber
+
+  open-vsx:
+    needs: ci
+    runs-on: ubuntu-latest
+    # Trusted publishing (no token): open-vsx.org → Settings → Trusted
+    # Publishers, namespace hibouhq, GitHub Actions, hibouhq / hibou-ide /
+    # release.yml / environment marketplace. Open VSX accepts the
+    # registration once the extension has a published version.
+    environment: marketplace
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: vscode
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: vscode/package-lock.json
+      - run: npm ci
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: hibou-vscode
+          path: vscode
+      # The first version needs a token (secret OVSX_PAT); delete the secret
+      # once the trusted publisher is registered.
+      - env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: |
+          if [ -n "$OVSX_PAT" ]; then
+            npx ovsx publish hibou-vscode.vsix
+          else
+            npx ovsx publish hibou-vscode.vsix --trusted-publishing
+          fi
+
+  jetbrains-marketplace:
+    needs: [version, ci]
+    runs-on: ubuntu-latest
+    environment: marketplace
+    defaults:
+      run:
+        working-directory: jetbrains
+    env:
+      JETBRAINS_MARKETPLACE_TOKEN: ${{ secrets.JETBRAINS_MARKETPLACE_TOKEN }}
+      JETBRAINS_CERTIFICATE_CHAIN: ${{ secrets.JETBRAINS_CERTIFICATE_CHAIN }}
+      JETBRAINS_PRIVATE_KEY: ${{ secrets.JETBRAINS_PRIVATE_KEY }}
+      JETBRAINS_PRIVATE_KEY_PASSWORD: ${{ secrets.JETBRAINS_PRIVATE_KEY_PASSWORD }}
+    steps:
+      - name: Report skipped store
+        if: env.JETBRAINS_MARKETPLACE_TOKEN == '' || env.JETBRAINS_PRIVATE_KEY == ''
+        working-directory: .
+        run: echo "::warning::JetBrains secrets are not set; JetBrains Marketplace skipped"
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        if: env.JETBRAINS_MARKETPLACE_TOKEN != '' && env.JETBRAINS_PRIVATE_KEY != ''
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        if: env.JETBRAINS_MARKETPLACE_TOKEN != '' && env.JETBRAINS_PRIVATE_KEY != ''
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+        if: env.JETBRAINS_MARKETPLACE_TOKEN != '' && env.JETBRAINS_PRIVATE_KEY != ''
+        with:
+          gradle-version: "9.8.1"
+      - name: Sign and publish
+        if: env.JETBRAINS_MARKETPLACE_TOKEN != '' && env.JETBRAINS_PRIVATE_KEY != ''
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: gradle --no-daemon publishPlugin -PpluginVersion="$VERSION"

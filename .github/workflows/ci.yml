@@ -5,59 +5,30 @@ name: CI
 # `compat` job checks the handshake against the latest hibou release
 # (PROTOCOL.md).
 #
-# Releases: push a tag `vX.Y.Z` (e.g. v0.1.0). The version comes from the tag;
-# the stores only accept plain X.Y.Z. While the major version is 0, VS Code
-# builds are pre-releases. CI publishes to Open VSX and the JetBrains
-# Marketplace when their secrets exist; add required reviewers to the
-# `marketplace` environment to approve every publish by hand.
-#
-# The Visual Studio Marketplace is published by hand: download the
-# `hibou-vscode` artifact and upload it on marketplace.visualstudio.com/manage.
-# (CI publishing there needs an Azure DevOps token, which now requires an
-# Azure subscription, and global tokens are retired on 2026-12-01.)
+# Releases are in release.yml, which runs these same jobs with the version
+# taken from the tag.
 
 on:
   push:
     branches: [main]
-    tags: ["v*"]
   pull_request:
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      version:
+        description: Release version (X.Y.Z); empty for a regular CI build.
+        type: string
+        default: ""
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+  group: ci-${{ github.ref }}-${{ inputs.version }}
+  cancel-in-progress: ${{ inputs.version == '' }}
 
 jobs:
-  version:
-    runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.v.outputs.version }}
-      release: ${{ steps.v.outputs.release }}
-      prerelease: ${{ steps.v.outputs.prerelease }}
-    steps:
-      - id: v
-        env:
-          REF: ${{ github.ref }}
-        run: |
-          if [[ "$REF" == refs/tags/v* ]]; then
-            version="${REF#refs/tags/v}"
-            if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-              echo "::error::tag must be vX.Y.Z (the stores accept plain X.Y.Z only), got ${REF#refs/tags/}"
-              exit 1
-            fi
-            echo "version=$version" >> "$GITHUB_OUTPUT"
-            echo "release=true" >> "$GITHUB_OUTPUT"
-            [[ "$version" == 0.* ]] && echo "prerelease=true" >> "$GITHUB_OUTPUT" || echo "prerelease=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "release=false" >> "$GITHUB_OUTPUT"
-            echo "prerelease=false" >> "$GITHUB_OUTPUT"
-          fi
-
   vscode:
-    needs: version
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -73,17 +44,13 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - name: Set the release version
-        if: needs.version.outputs.release == 'true'
+        if: inputs.version != ''
         env:
-          VERSION: ${{ needs.version.outputs.version }}
+          VERSION: ${{ inputs.version }}
         run: npm version "$VERSION" --no-git-tag-version --allow-same-version
-      # A pre-release flag baked into the VSIX lets the artifact be uploaded
-      # by hand on the Marketplace (no Azure DevOps token needed).
       - name: Package VSIX
-        env:
-          PRERELEASE: ${{ needs.version.outputs.prerelease == 'true' && '--pre-release' || '' }}
         run: |
-          npm run package -- $PRERELEASE
+          npm run package
           mv hibou-*.vsix hibou-vscode.vsix
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -92,11 +59,7 @@ jobs:
           retention-days: 14
 
   jetbrains:
-    needs: version
     runs-on: ubuntu-latest
-    # Non-blocking until the IntelliJ plugin's first successful build; remove
-    # this line once it is green.
-    continue-on-error: true
     defaults:
       run:
         working-directory: jetbrains
@@ -111,11 +74,15 @@ jobs:
           gradle-version: "9.8.1"
       - name: Test and build
         env:
-          VERSION: ${{ needs.version.outputs.version }}
+          VERSION: ${{ inputs.version }}
         run: gradle --no-daemon test buildPlugin ${VERSION:+-PpluginVersion=$VERSION}
-      - name: Verify against recommended IDEs
-        if: github.event_name != 'pull_request'
-        run: gradle --no-daemon verifyPlugin
+      # Static API check against every supported IDE release; it downloads
+      # each IDE, so it runs on releases only.
+      - name: Verify against supported IDEs
+        if: inputs.version != ''
+        env:
+          VERSION: ${{ inputs.version }}
+        run: gradle --no-daemon verifyPlugin -PpluginVersion="$VERSION"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: hibou-intellij
@@ -125,6 +92,7 @@ jobs:
   compat:
     runs-on: ubuntu-latest
     env:
+      # hibouhq/hibou is public: the workflow token reads its releases.
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
@@ -138,82 +106,3 @@ jobs:
           gh release download "$tag" --repo hibouhq/hibou --pattern hibou-linux-amd64 --dir "$RUNNER_TEMP"
           chmod +x "$RUNNER_TEMP/hibou-linux-amd64"
           node scripts/compat.mjs "$RUNNER_TEMP/hibou-linux-amd64"
-
-  publish-vscode:
-    needs: [version, vscode, compat]
-    if: needs.version.outputs.release == 'true'
-    runs-on: ubuntu-latest
-    environment: marketplace
-    defaults:
-      run:
-        working-directory: vscode
-    env:
-      OVSX_PAT: ${{ secrets.OVSX_PAT }}
-      # Visual Studio Marketplace publishing is disabled (manual upload, see the
-      # header). To re-enable: uncomment this line and the step below, and add
-      # the VSCE_PAT secret to the `marketplace` environment.
-      # VSCE_PAT: ${{ secrets.VSCE_PAT }}
-      PRERELEASE: ${{ needs.version.outputs.prerelease == 'true' && '--pre-release' || '' }}
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: vscode/package-lock.json
-      - run: npm ci
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: hibou-vscode
-          path: vscode
-      # - name: Visual Studio Marketplace
-      #   if: env.VSCE_PAT != ''
-      #   run: npx vsce publish $PRERELEASE --packagePath hibou-vscode.vsix
-      - name: Open VSX
-        if: env.OVSX_PAT != ''
-        run: npx ovsx publish hibou-vscode.vsix $PRERELEASE
-      - name: Report skipped store
-        if: env.OVSX_PAT == ''
-        run: |
-          echo "::warning::OVSX_PAT is not set: Open VSX skipped"
-      - name: Visual Studio Marketplace (manual)
-        run: |
-          echo "::notice::Upload the hibou-vscode artifact by hand on https://marketplace.visualstudio.com/manage/publishers/hibouhq"
-
-  publish-jetbrains:
-    needs: [version, jetbrains, compat]
-    if: needs.version.outputs.release == 'true'
-    runs-on: ubuntu-latest
-    environment: marketplace
-    defaults:
-      run:
-        working-directory: jetbrains
-    env:
-      JETBRAINS_MARKETPLACE_TOKEN: ${{ secrets.JETBRAINS_MARKETPLACE_TOKEN }}
-      JETBRAINS_CERTIFICATE_CHAIN: ${{ secrets.JETBRAINS_CERTIFICATE_CHAIN }}
-      JETBRAINS_PRIVATE_KEY: ${{ secrets.JETBRAINS_PRIVATE_KEY }}
-      JETBRAINS_PRIVATE_KEY_PASSWORD: ${{ secrets.JETBRAINS_PRIVATE_KEY_PASSWORD }}
-    steps:
-      # The first version must be uploaded by hand on plugins.jetbrains.com
-      # (JetBrains reviews new plugins); this job publishes the following ones.
-      - name: Report skipped store
-        if: env.JETBRAINS_MARKETPLACE_TOKEN == '' || env.JETBRAINS_PRIVATE_KEY == ''
-        run: |
-          echo "::warning::JetBrains secrets are not set: JetBrains Marketplace skipped"
-        working-directory: .
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
-        if: env.JETBRAINS_MARKETPLACE_TOKEN != '' && env.JETBRAINS_PRIVATE_KEY != ''
-      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
-        if: env.JETBRAINS_MARKETPLACE_TOKEN != '' && env.JETBRAINS_PRIVATE_KEY != ''
-        with:
-          distribution: temurin
-          java-version: "21"
-      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
-        if: env.JETBRAINS_MARKETPLACE_TOKEN != '' && env.JETBRAINS_PRIVATE_KEY != ''
-        with:
-          gradle-version: "9.8.1"
-      - name: Sign and publish
-        if: env.JETBRAINS_MARKETPLACE_TOKEN != '' && env.JETBRAINS_PRIVATE_KEY != ''
-        env:
-          VERSION: ${{ needs.version.outputs.version }}
-        run: gradle --no-daemon publishPlugin -PpluginVersion="$VERSION"
