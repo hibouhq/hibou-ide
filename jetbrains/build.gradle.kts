@@ -11,6 +11,12 @@ version = providers.gradleProperty("pluginVersion").get()
 
 kotlin {
     jvmToolchain(21)
+    compilerOptions {
+        // Call the platform's interface default methods instead of
+        // generating overrides: those overrides count as internal API use
+        // for the plugin verifier.
+        jvmDefault = org.jetbrains.kotlin.gradle.dsl.JvmDefaultMode.NO_COMPATIBILITY
+    }
 }
 
 repositories {
