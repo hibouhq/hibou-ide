@@ -11,8 +11,8 @@ VSCodium, code-server, Theia).
 - **Quick fixes**: suppress with the scanner's own directive and a required
   justification (`// #nosec G101 -- reason`, `nosemgrep`, `eslint-disable-next-line`,
   `# nosec`, `gitleaks:allow`); accept the risk; mark a false positive; dispute a
-  suppression. Triage needs a token with `triage:write` and the org admin role;
-  otherwise the finding opens in the browser.
+  suppression. Triage needs the org admin role and a token with
+  `triage:write`; without them the quick fixes offer to triage in the browser.
 - **Check staged changes for secrets** (opt-in, Source Control title bar):
   sends `git diff --cached` to the hibou server, which scans it and stores
   nothing. Off until you agree; `hibou.secretCheck.enabled` is user-level only.
@@ -26,8 +26,10 @@ No source code is sent to the hibou server.
 
 1. `hibou: Set Server URL` (or reuse the server from `hibou login`).
 2. `hibou: Sign In` opens your browser with a one-time code (device login). The
-   result is a read-only token stored in the editor's secret storage. Servers
-   that predate device login ask for an API key instead.
+   result is a token stored in the editor's secret storage. It is read-only
+   unless you pick **Read-only + triage** on the approval page, which lets an
+   org admin triage from the editor. Servers that predate device login ask for
+   an API key instead.
 
 The extension downloads the `hibou` binary matching your server's version from
 the server itself and checks its sha256 before running it. Set `hibou.path` to

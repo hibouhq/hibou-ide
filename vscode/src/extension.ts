@@ -254,10 +254,11 @@ class Extension {
       async (_progress, cancel) => {
         cancel.onCancellationRequested(() => void client.sendRequest("hibou/login/cancel"));
         try {
-          const res = await client.sendRequest<{ token: string; tokenName?: string; user?: string; expiresAt?: string }>("hibou/login/wait", undefined, cancel);
+          const res = await client.sendRequest<{ token: string; tokenName?: string; user?: string; expiresAt?: string; preset?: string }>("hibou/login/wait", undefined, cancel);
           await this.context.secrets.store(secretKey(this.server!), res.token);
           const until = res.expiresAt ? ` until ${new Date(res.expiresAt).toLocaleDateString()}` : "";
-          void vscode.window.showInformationMessage(`hibou: signed in${res.user ? ` as ${res.user}` : ""} (read-only token${until}).`);
+          const access = res.preset === "triage" ? "read-only + triage" : "read-only";
+          void vscode.window.showInformationMessage(`hibou: signed in${res.user ? ` as ${res.user}` : ""} (${access} token${until}).`);
         } catch (err) {
           if (!cancel.isCancellationRequested) void vscode.window.showErrorMessage(`hibou: ${errorText(err)}`);
         }

@@ -136,7 +136,8 @@ class SignInAction : HibouAction() {
                         val res = wait.get()
                         HibouCredentials.store(server, res.str("token"))
                         val user = res.str("user").takeIf { it.isNotEmpty() }?.let { " as $it" }.orEmpty()
-                        notify(project, "Signed in to hibou$user (read-only token).")
+                        val access = if (res.str("preset") == "triage") "read-only + triage" else "read-only"
+                        notify(project, "Signed in to hibou$user ($access token).")
                         service.reloadStatus()
                     } catch (_: CancellationException) {
                     } catch (t: Throwable) {
