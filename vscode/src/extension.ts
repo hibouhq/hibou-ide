@@ -22,7 +22,7 @@ let ext: Extension | undefined;
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   ext = new Extension(context);
-  await ext.start();
+  await ext.restart();
 }
 
 export async function deactivate(): Promise<void> {
@@ -174,9 +174,10 @@ class Extension {
   async stop(): Promise<void> {
     const client = this.client;
     this.client = undefined;
-    if (!client || client.state === State.Stopped) return;
+    if (!client) return;
     try {
-      // dispose() also unregisters the commands the client registered.
+      // dispose() also unregisters the commands the client registered, so it
+      // runs on a stopped client too: one that crashed still holds them.
       await client.dispose();
     } catch (err) {
       // A client whose start failed cannot be stopped; nothing to clean up.
@@ -187,11 +188,13 @@ class Extension {
   private ready: Promise<void> = Promise.resolve();
 
   restart(): Promise<void> {
-    this.ready = (async () => {
+    // Queued: a settings change and the Restart command at once would start
+    // two clients, and the second collides with the first one's commands.
+    this.ready = this.ready.catch(() => undefined).then(async () => {
       await this.stop();
       await this.start();
       this.panel.refresh();
-    })();
+    });
     return this.ready;
   }
 
