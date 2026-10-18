@@ -10,12 +10,6 @@ secret check (Tools › hibou), the `.hibou.yaml` schema
 and the two client-side commands (`hibou.suppress`, `hibou.triage`) that need a
 dialog.
 
-> **Status:** written but not yet compiled. The first CI run (`.github/workflows/ci.yml`)
-> is its first build. LSP4IJ API names to check there if it fails:
-> `StreamConnectionProvider.getInitializationOptions(VirtualFile?)`,
-> `LanguageServerManager.getLanguageServer/stop/start`, `LSPCommandAction.commandPerformed`,
-> `LSPIJUtils.applyWorkspaceEdit/toUriAsString/findResourceFor`.
-
 ## Build
 
 Needs JDK 21 and Gradle 9.8 (no wrapper is checked in):
@@ -26,5 +20,5 @@ gradle runIde                # sandbox IDE with the plugin and LSP4IJ
 gradle verifyPlugin          # compatibility against recommended IDE builds
 ```
 
-`pluginSinceBuild = 242` (2024.2) is the oldest platform LSP4IJ supports and
-keeps the current Android Studio baseline in range.
+`pluginSinceBuild = 251` (2025.1) is the oldest supported IDE; current
+Android Studio is still in range.
