@@ -101,7 +101,13 @@ jobs:
           node-version: "22"
       - name: Latest hibou release
         run: |
-          tag=$(gh release list --repo hibouhq/hibou --limit 1 --json tagName --jq '.[0].tagName')
+          # The newest release whose binaries are uploaded: a release that was
+          # just published has none until hibou's CI attaches them.
+          tag=$(gh api repos/hibouhq/hibou/releases --jq '[.[] | select(any(.assets[]; .name == "hibou-linux-amd64"))][0].tag_name')
+          if [ -z "$tag" ] || [ "$tag" = "null" ]; then
+            echo "::error::no hibou release with hibou-linux-amd64"
+            exit 1
+          fi
           echo "Checking against hibou $tag"
           gh release download "$tag" --repo hibouhq/hibou --pattern hibou-linux-amd64 --dir "$RUNNER_TEMP"
           chmod +x "$RUNNER_TEMP/hibou-linux-amd64"
