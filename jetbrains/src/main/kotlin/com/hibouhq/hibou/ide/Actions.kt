@@ -18,6 +18,7 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.util.text.StringUtil
 import com.redhat.devtools.lsp4ij.LSPIJUtils
+import com.redhat.devtools.lsp4ij.commands.LSPCommand
 import com.redhat.devtools.lsp4ij.commands.LSPCommandAction
 import org.eclipse.lsp4j.Command
 import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
@@ -293,7 +294,7 @@ private fun argsOf(command: Command): JsonObject? =
  * applies the edit `hibou lsp` computes. LSP4IJ routes commands the server
  * does not advertise to the action with the same ID. */
 class SuppressCommandAction : LSPCommandAction() {
-    override fun commandPerformed(command: Command, e: AnActionEvent) {
+    override fun commandPerformed(command: LSPCommand, e: AnActionEvent) {
         val project = e.project ?: return
         val args = argsOf(command) ?: return
         val reason = Messages.showInputDialog(
@@ -315,12 +316,15 @@ class SuppressCommandAction : LSPCommandAction() {
             }
     }
 
+    // Dialogs: run on the EDT (LSP4IJ defaults to a background thread).
+    override fun getCommandPerformedThread() = ActionUpdateThread.EDT
+
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 }
 
 /** Client-side command "hibou.triage" (ADR-042 phase 2). */
 class TriageCommandAction : LSPCommandAction() {
-    override fun commandPerformed(command: Command, e: AnActionEvent) {
+    override fun commandPerformed(command: LSPCommand, e: AnActionEvent) {
         val project = e.project ?: return
         val args = argsOf(command) ?: return
         val action = args.str("action")
@@ -355,6 +359,8 @@ class TriageCommandAction : LSPCommandAction() {
                 }
             }
     }
+
+    override fun getCommandPerformedThread() = ActionUpdateThread.EDT
 
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 }

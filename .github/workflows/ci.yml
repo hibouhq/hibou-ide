@@ -125,26 +125,19 @@ jobs:
   compat:
     runs-on: ubuntu-latest
     env:
-      # Read access to hibouhq/hibou releases (private repository): a
-      # fine-grained token with Contents: read on hibouhq/hibou.
-      GH_TOKEN: ${{ secrets.HIBOU_RELEASES_TOKEN }}
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
       - name: Latest hibou release
-        if: env.GH_TOKEN != ''
         run: |
           tag=$(gh release list --repo hibouhq/hibou --limit 1 --json tagName --jq '.[0].tagName')
           echo "Checking against hibou $tag"
           gh release download "$tag" --repo hibouhq/hibou --pattern hibou-linux-amd64 --dir "$RUNNER_TEMP"
           chmod +x "$RUNNER_TEMP/hibou-linux-amd64"
           node scripts/compat.mjs "$RUNNER_TEMP/hibou-linux-amd64"
-      - name: Report skipped check
-        if: env.GH_TOKEN == ''
-        run: |
-          echo "::warning::HIBOU_RELEASES_TOKEN is not set: compatibility with the latest hibou release not checked"
 
   publish-vscode:
     needs: [version, vscode, compat]
