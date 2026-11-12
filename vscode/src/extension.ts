@@ -8,6 +8,7 @@ import { resolveBinary } from "./binary";
 import { Status, statusBar, statusForPath } from "./format";
 import { FindingsPanel } from "./panel";
 import { isInsecureRemote, normalizeServer } from "./platform";
+import { DependencyPatchReview } from "./remediation";
 
 /** JSON-RPC error the language server returns when the hibou server predates
  * device login (ADR-043): fall back to pasting a token. */
@@ -37,6 +38,7 @@ class Extension {
   private readonly statusItem: vscode.StatusBarItem;
   private readonly panel: FindingsPanel;
   private readonly coverage: CoverageGutter;
+  private readonly dependencyPatches: DependencyPatchReview;
   private schemaRegistered = false;
   /** hibou/* requests the running server advertised at initialize. */
   private serverRequests = new Set<string>();
@@ -53,8 +55,9 @@ class Extension {
       () => this.statuses,
     );
     this.coverage = new CoverageGutter(() => this.client);
+    this.dependencyPatches = new DependencyPatchReview(context.extensionUri);
     const c = context.subscriptions;
-    c.push(this.log, this.statusItem, this.coverage, this.panel);
+    c.push(this.log, this.statusItem, this.coverage, this.panel, this.dependencyPatches);
     c.push(vscode.window.registerWebviewViewProvider(FindingsPanel.viewType, this.panel, { webviewOptions: { retainContextWhenHidden: true } }));
 
     const cmd = (id: string, fn: (...args: any[]) => unknown) => c.push(vscode.commands.registerCommand(id, fn));
@@ -67,6 +70,23 @@ class Extension {
     cmd("hibou.showMenu", () => this.showMenu());
     cmd("hibou.restart", () => this.restart());
     cmd("hibou.checkStagedSecrets", () => this.checkStagedSecrets());
+    cmd("hibou.reviewDependencyPatch", async () => {
+      if (!this.supports("hibou/remediationApply") || !this.client) return;
+      try {
+        await this.dependencyPatches.open(this.client, this.statuses.map((s) => s.root));
+      } catch (err) {
+        void vscode.window.showErrorMessage(`hibou: ${errorText(err)}`);
+      }
+    });
+    cmd("hibou.prepareDependencyFixes", async () => {
+      if (!this.supports("hibou/remediationPrepare") || !this.supports("hibou/remediationGenerate") || !this.supports("hibou/remediationRevise") || !this.client) return;
+      try {
+        await this.dependencyPatches.generate(this.client,this.statuses.map((s)=>s.root),
+          this.serverRequests.has("hibou/remediationManagedGenerate") && this.serverRequests.has("hibou/remediationManagedPublish"));
+      } catch (err) {
+        void vscode.window.showErrorMessage(`hibou: ${errorText(err)}`);
+      }
+    });
     cmd("hibou.suppress", (arg: { uri: string; fingerprint: string; line: number }) => this.suppress(arg));
     cmd("hibou.triage", (arg: { uri: string; fingerprint: string; action: string }) => this.triage(arg));
 

@@ -141,6 +141,16 @@
         "icon": "$(key)"
       },
       {
+        "command": "hibou.prepareDependencyFixes",
+        "title": "Prepare Batch Dependency Fixes",
+        "category": "hibou"
+      },
+      {
+        "command": "hibou.reviewDependencyPatch",
+        "title": "Review and Apply Dependency Patch",
+        "category": "hibou"
+      },
+      {
         "command": "hibou.restart",
         "title": "Restart Language Server",
         "category": "hibou"
