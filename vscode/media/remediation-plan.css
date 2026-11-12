@@ -1,0 +1,50 @@
+:root { color-scheme: light dark; }
+* { box-sizing: border-box; }
+body { margin: 0; color: var(--vscode-foreground); background: var(--vscode-editor-background); font: var(--vscode-font-size)/1.55 var(--vscode-font-family); }
+main { max-width: 1180px; margin: auto; padding: 28px 32px 88px; }
+h1 { margin: 5px 0 8px; font-size: 25px; font-weight: 600; letter-spacing: -.5px; }
+h2 { font-size: 15px; font-weight: 600; margin: 0 0 12px; }
+section { margin-top: 26px; }
+.eyebrow { font-size: 10px; letter-spacing: 1.7px; color: var(--vscode-descriptionForeground); }
+.secondary { color: var(--vscode-descriptionForeground); font-size: 12px; }
+code { font-family: var(--vscode-editor-font-family); overflow-wrap: anywhere; }
+.target { display: grid; gap: 5px; padding: 14px 18px; border-left: 3px solid var(--vscode-focusBorder); background: var(--vscode-textCodeBlock-background); }
+.target > code:first-child { font-size: 13px; font-weight: 600; }
+.target span { color: var(--vscode-descriptionForeground); margin-right: 8px; }
+.module { display: grid; grid-template-columns: auto 1fr; gap: 8px; padding: 9px 0; border-bottom: 1px solid var(--vscode-panel-border); }
+.module code { font-size: 12px; }
+.module small { display: block; color: var(--vscode-descriptionForeground); }
+details { margin-top: 12px; }
+summary { cursor: pointer; color: var(--vscode-editorWarning-foreground); }
+li { margin: 7px 0; overflow-wrap: anywhere; }
+.section-title, .toolbar, .pagination, footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.section-title h2 { margin: 0; }
+.toolbar { margin: 15px 0; }
+label { font-size: 12px; }
+input, select, button { font: inherit; }
+input[type="search"], input[type="text"], select { padding: 6px 8px; border: 1px solid var(--vscode-input-border, transparent); color: var(--vscode-input-foreground); background: var(--vscode-input-background); border-radius: 2px; }
+input[type="checkbox"] { accent-color: var(--vscode-focusBorder); }
+input:focus-visible, select:focus-visible, button:focus-visible, summary:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 3px; }
+button { cursor: pointer; color: var(--vscode-button-foreground); background: var(--vscode-button-background); border: 1px solid transparent; padding: 7px 12px; border-radius: 2px; }
+button:hover { background: var(--vscode-button-hoverBackground); }
+.secondary-button { color: var(--vscode-button-secondaryForeground); background: var(--vscode-button-secondaryBackground); }
+.secondary-button:hover { background: var(--vscode-button-secondaryHoverBackground); }
+button:disabled { opacity: .5; cursor: default; }
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; text-align: left; }
+th { padding: 9px 10px; color: var(--vscode-descriptionForeground); font-size: 11px; font-weight: 500; border-bottom: 1px solid var(--vscode-panel-border); }
+td { vertical-align: top; padding: 13px 10px; border-bottom: 1px solid var(--vscode-panel-border); }
+td:first-child { min-width: 180px; }
+td:first-child small { display: block; margin-top: 3px; color: var(--vscode-descriptionForeground); }
+td select { max-width: 220px; width: 100%; }
+td input[type="text"] { width: 160px; }
+.row-help { display: block; color: var(--vscode-descriptionForeground); font-size: 11px; margin-top: 5px; max-width: 280px; }
+.prerelease { display: block; font-size: 11px; margin-top: 6px; }
+.pagination { justify-content: flex-end; margin-top: 14px; font-size: 12px; color: var(--vscode-descriptionForeground); }
+.result { padding: 12px 16px; border: 1px solid var(--vscode-panel-border); }
+.result p { margin: 4px 0; }
+#error { color: var(--vscode-errorForeground); white-space: pre-wrap; overflow-wrap: anywhere; }
+#major-warning { color: var(--vscode-editorWarning-foreground); }
+footer { justify-content: flex-end; position: fixed; bottom: 0; left: 0; right: 0; padding: 14px 32px; border-top: 1px solid var(--vscode-panel-border); background: var(--vscode-editor-background); }
+[hidden] { display: none !important; }
+@media (max-width: 680px) { main { padding: 20px 14px 100px; } footer { padding: 12px 14px; } h1 { font-size: 21px; } }

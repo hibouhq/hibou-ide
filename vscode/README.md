@@ -48,3 +48,34 @@ npm run package        # hibou-<version>.vsix
 The language server is `hibou lsp`, shipped with each hibou release; the
 extension downloads it from your server. The extension ↔ server contract is
 described in `PROTOCOL.md` at the root of the hibou-ide repository.
+## Dependency patch review
+
+**hibou: Review and Apply Dependency Patch** opens a trusted Hibou JSON patch
+artifact in a read-only diff preview. After explicit confirmation, the language
+server verifies the patch digest, exact base commit, affected files and unsaved
+buffers before applying the batch. It does not upload source, stage changes,
+commit or push. Build/tests are not run. Verification fields describe the
+generator's checks; they are not an origin signature.
+
+The import command requires the `hibou/remediationApply` capability.
+Plain Git patches remain applicable with normal Git tooling; this
+review action requires the JSON artifact's base/hash/file metadata.
+
+**hibou: Prepare Batch Dependency Fixes** discovers committed independent npm
+package-lock v3 modules and uses installed local Node/npm after explicit
+workspace/execution consent. The review workspace supports Automatic, fresh
+deps.dev suggestions and exact direct-dependency versions, module selection,
+explicit major/prerelease choices, safe regeneration and read-only diff review.
+Both original and generated lockfiles undergo strict native verification.
+Unsupported manager/configuration layouts are explained; no manager is silently
+substituted and no executable is downloaded.
+
+**Create PR with Hibou** is a separately confirmed action for installations and
+tokens with the required managed-generation/publication rights. It regenerates
+the choices on Hibou at the same accessible source commit and requires review
+of the managed diff before publishing. The local patch/source is not uploaded.
+
+Managed execution requires an explicitly enabled, qualified Kubernetes workload
+profile and a matching live controller. It is disabled by default.
+Local generation/review/apply is unaffected; the extension reports the server's
+readiness reason and never falls back to running package managers in the API pod.
